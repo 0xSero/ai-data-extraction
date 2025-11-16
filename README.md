@@ -63,6 +63,17 @@ Extracts from Continue AI Assistant
   - Context items
   - Workspace information
 
+### 7. `extract_droid.py`
+Extracts from Droid CLI (Factory)
+- **Searches**: `~/.factory/sessions/`
+- **Formats**: JSONL session files
+- **Includes**:
+  - User/assistant messages
+  - Tool use and results
+  - Reasoning/thinking blocks
+  - Complete conversation context
+  - Session metadata (title, owner)
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -90,6 +101,12 @@ python3 extract_trae.py
 # Extract from Windsurf
 python3 extract_windsurf.py
 
+# Extract from Continue
+python3 extract_continue.py
+
+# Extract from Droid CLI
+python3 extract_droid.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -104,7 +121,9 @@ extracted_data/
 ├── cursor_complete_20250116_143045.jsonl
 ├── codex_conversations_20250116_143102.jsonl
 ├── trae_conversations_20250116_143115.jsonl
-└── windsurf_conversations_20250116_143130.jsonl
+├── windsurf_conversations_20250116_143130.jsonl
+├── continue_conversations_20250116_143145.jsonl
+└── droid_conversations_20250116_143200.jsonl
 ```
 
 ## 📊 Output Format
@@ -190,6 +209,14 @@ Each script follows this pattern:
 - **Format**: Hybrid (JSONL + SQLite)
 - **Location**: Similar to VSCode/Cursor structure
 - **Structure**: VSCode extension data format
+
+#### Droid CLI (Factory)
+- **Format**: JSONL (one event per line)
+- **Location**: `~/.factory/sessions/[sessionId].jsonl`
+- **Events**:
+  - `session_start`: Session metadata (title, owner)
+  - `message`: User/assistant messages with content blocks
+  - `todo_state`: Todo list snapshots (optional)
 
 ## 🎓 Understanding the Data
 
@@ -431,6 +458,10 @@ conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
 ### Codex
 - ✅ Rollout JSONL format
 - ✅ Time-based session organization
+
+### Droid CLI (Factory)
+- ✅ All versions with JSONL session format
+- ✅ Cross-platform (`~/.factory/sessions`)
 
 ## 📈 Performance Tips
 

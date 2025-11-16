@@ -62,6 +62,14 @@ else
 fi
 echo ""
 
+echo "🔍 Extracting from Droid..."
+if python3 extract_droid.py 2>&1 | tee extracted_data/droid_extraction.log | grep -q "Found [1-9]"; then
+    found_tools+=("Droid")
+else
+    not_found+=("Droid")
+fi
+echo ""
+
 echo "================================================================================"
 echo "EXTRACTION SUMMARY"
 echo "================================================================================"
