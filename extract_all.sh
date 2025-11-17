@@ -62,6 +62,14 @@ else
 fi
 echo ""
 
+echo "🔍 Extracting from Gemini CLI..."
+if python3 extract_gemini.py 2>&1 | tee extracted_data/gemini_extraction.log | grep -q "Total conversations: [1-9]"; then
+    found_tools+=("Gemini CLI")
+else
+    not_found+=("Gemini CLI")
+fi
+echo ""
+
 echo "================================================================================"
 echo "EXTRACTION SUMMARY"
 echo "================================================================================"

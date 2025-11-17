@@ -63,6 +63,17 @@ Extracts from Continue AI Assistant
   - Context items
   - Workspace information
 
+### 7. `extract_gemini.py`
+Extracts from Google Gemini CLI
+- **Searches**: `~/.gemini/tmp/[hash]/chats/`
+- **Formats**: JSON session files
+- **Includes**:
+  - User/assistant messages
+  - Thoughts (reasoning steps with timestamps)
+  - Token usage breakdown
+  - Model information
+  - Project hash and workspace linking
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -90,6 +101,9 @@ python3 extract_trae.py
 # Extract from Windsurf
 python3 extract_windsurf.py
 
+# Extract from Gemini CLI
+python3 extract_gemini.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -102,6 +116,7 @@ All scripts create an `extracted_data/` directory with timestamped JSONL files:
 extracted_data/
 ├── claude_code_conversations_20250116_143022.jsonl
 ├── cursor_complete_20250116_143045.jsonl
+├── gemini_conversations_20250116_143145.jsonl
 ├── codex_conversations_20250116_143102.jsonl
 ├── trae_conversations_20250116_143115.jsonl
 └── windsurf_conversations_20250116_143130.jsonl
