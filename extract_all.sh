@@ -78,6 +78,14 @@ else
 fi
 echo ""
 
+echo "🔍 Extracting from Antigravity (requires Antigravity to be running)..."
+if python3 extract_antigravity.py 2>&1 | tee extracted_data/antigravity_extraction.log | grep -q "Total conversations: [1-9]"; then
+    found_tools+=("Antigravity")
+else
+    not_found+=("Antigravity")
+fi
+echo ""
+
 echo "================================================================================"
 echo "EXTRACTION SUMMARY"
 echo "================================================================================"
