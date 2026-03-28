@@ -79,7 +79,7 @@ Extracts from OpenCode (CLI + Desktop)
 - **Searches**: 
   - CLI: `~/.local/share/opencode/storage/` (Linux), `~/Library/Application Support/opencode` (macOS)
   - Desktop: `~/.local/share/ai.opencode.app` (Linux), `~/Library/Application Support/ai.opencode.app` (macOS)
-- **Formats**: JSON files (sessions/messages/parts) and Tauri .dat files (desktop)
+- **Formats**: SQLite (`opencode.db`), JSON files (sessions/messages/parts), and Tauri .dat files (desktop)
 - **Includes**:
   - User/assistant messages with full conversation hierarchy
   - Tool calls and tool results
@@ -89,6 +89,10 @@ Extracts from OpenCode (CLI + Desktop)
   - Agent mode and session metadata
   - Project directory and version info
   - Parent/child session relationships
+- **Handles**:
+  - newer OpenCode CLI installs that store conversations in `opencode.db`
+  - legacy JSON storage layouts under `storage/message`, `storage/part`, and `storage/session`
+  - sidecar metadata from `storage/session_diff`, `storage/directory-readme`, `storage/agent-usage-reminder`, and `storage/rules-injector`
 
 ## 🚀 Quick Start
 

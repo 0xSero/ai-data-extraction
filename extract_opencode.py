@@ -15,6 +15,7 @@ Features:
 """
 
 import json
+import sqlite3
 import struct
 from pathlib import Path
 from datetime import datetime
@@ -181,6 +182,191 @@ def extract_project_id_from_content(text):
     
     return None
 
+def load_sidecar_json(storage_dir, category, session_id):
+    sidecar_file = storage_dir / 'storage' / category / f'{session_id}.json'
+    if not sidecar_file.exists():
+        return None
+    try:
+        with open(sidecar_file) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+def apply_part_to_message(part_data, message, all_content):
+    part_type = part_data.get('type')
+    part_text = part_data.get('text', '')
+
+    if part_text:
+        all_content.append(part_text)
+
+    if part_type == 'text':
+        message.setdefault('_content_parts', []).append(part_text)
+    elif part_type == 'tool' or part_type == 'tool-call':
+        state = part_data.get('state', {})
+        tool_name = part_data.get('tool', part_data.get('name'))
+
+        tool_call = {
+            'id': part_data.get('callID', part_data.get('id')),
+            'name': tool_name,
+            'input': state.get('input', part_data.get('input'))
+        }
+
+        message.setdefault('tool_calls', []).append(tool_call)
+
+        if state.get('status') == 'completed' and 'output' in state:
+            message.setdefault('tool_results', []).append({
+                'tool_call_id': part_data.get('callID'),
+                'tool': tool_name,
+                'output': state['output']
+            })
+    elif part_type == 'tool-result':
+        message.setdefault('tool_results', []).append({
+            'tool_call_id': part_data.get('toolCallID'),
+            'output': part_data.get('output')
+        })
+    elif part_type == 'code':
+        code_text = part_data.get('text', '')
+        language = part_data.get('language', '')
+        message.setdefault('_content_parts', []).append(f"```{language}\n{code_text}\n```")
+    elif part_type == 'reasoning':
+        reasoning_text = part_data.get('text', '')
+        if reasoning_text:
+            message.setdefault('_reasoning_parts', []).append(reasoning_text)
+    elif part_text and part_type not in {'step-start', 'step-finish'}:
+        message.setdefault('_content_parts', []).append(part_text)
+
+def finalize_message(message):
+    content_parts = message.pop('_content_parts', [])
+    reasoning_parts = message.pop('_reasoning_parts', [])
+    message['content'] = '\n'.join(content_parts)
+    if reasoning_parts:
+        message['reasoning'] = '\n'.join(reasoning_parts)
+    return message
+
+def extract_cli_conversations_db(install_dir):
+    conversations = []
+    db_path = install_dir / 'opencode.db'
+    storage_dir = install_dir
+
+    if not db_path.exists():
+        return conversations
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    project_map = {}
+    for row in cur.execute('SELECT id, worktree, vcs, name, icon_url, icon_color, time_created, time_updated, time_initialized, sandboxes, commands FROM project'):
+        project_map[row['id']] = dict(row)
+
+    session_rows = cur.execute(
+        'SELECT id, project_id, parent_id, slug, directory, title, version, share_url, '
+        'summary_additions, summary_deletions, summary_files, summary_diffs, revert, permission, '
+        'time_created, time_updated, time_compacting, time_archived, workspace_id '
+        'FROM session ORDER BY time_created'
+    ).fetchall()
+
+    print(f"  Found {len(session_rows)} sessions in opencode.db")
+
+    for session_row in session_rows:
+        session_id = session_row['id']
+        messages = []
+        all_content = []
+
+        message_rows = cur.execute(
+            'SELECT id, time_created, time_updated, data FROM message WHERE session_id = ? ORDER BY time_created, id',
+            (session_id,)
+        ).fetchall()
+
+        for message_row in message_rows:
+            try:
+                msg_data = json.loads(message_row['data'])
+            except Exception:
+                continue
+
+            message = {
+                'role': msg_data.get('role', 'assistant'),
+                'content': '',
+                'timestamp': msg_data.get('time', {}).get('created', message_row['time_created'])
+            }
+
+            for field in ['modelID', 'providerID', 'mode', 'agent', 'path', 'cost', 'tokens', 'variant', 'finish', 'summary', 'error', 'model']:
+                if field in msg_data and msg_data[field] is not None:
+                    message[field] = msg_data[field]
+
+            if 'parentID' in msg_data:
+                message['parent_id'] = msg_data['parentID']
+
+            part_rows = cur.execute(
+                'SELECT data FROM part WHERE session_id = ? AND message_id = ? ORDER BY time_created, id',
+                (session_id, message_row['id'])
+            ).fetchall()
+
+            for part_row in part_rows:
+                try:
+                    part_data = json.loads(part_row['data'])
+                except Exception:
+                    continue
+                apply_part_to_message(part_data, message, all_content)
+
+            messages.append(finalize_message(message))
+
+        if not messages:
+            continue
+
+        project = project_map.get(session_row['project_id'], {})
+        conversation = {
+            'messages': messages,
+            'source': 'opencode-cli',
+            'session_id': session_id,
+            'project_id': session_row['project_id'],
+            'parent_session_id': session_row['parent_id'],
+            'slug': session_row['slug'],
+            'directory': session_row['directory'],
+            'title': session_row['title'],
+            'version': session_row['version'],
+            'share_url': session_row['share_url'],
+            'created_at': session_row['time_created'],
+            'updated_at': session_row['time_updated'],
+            'time_archived': session_row['time_archived'],
+            'workspace_id': session_row['workspace_id'],
+            'summary': {
+                'additions': session_row['summary_additions'],
+                'deletions': session_row['summary_deletions'],
+                'files': session_row['summary_files'],
+                'diffs': json.loads(session_row['summary_diffs']) if session_row['summary_diffs'] else None
+            },
+            'permission': json.loads(session_row['permission']) if session_row['permission'] else None,
+            'revert': json.loads(session_row['revert']) if session_row['revert'] else None,
+            'project': project,
+            'db_path': str(db_path)
+        }
+
+        session_diff = load_sidecar_json(storage_dir, 'session_diff', session_id)
+        directory_readme = load_sidecar_json(storage_dir, 'directory-readme', session_id)
+        agent_usage = load_sidecar_json(storage_dir, 'agent-usage-reminder', session_id)
+        rules_injector = load_sidecar_json(storage_dir, 'rules-injector', session_id)
+
+        if session_diff:
+            conversation['session_diffs'] = session_diff
+        if directory_readme:
+            conversation['directory_readme'] = directory_readme
+        if agent_usage:
+            conversation['agent_usage'] = agent_usage
+        if rules_injector:
+            conversation['rules_injector'] = rules_injector
+
+        if not conversation.get('directory'):
+            combined_content = '\n'.join(all_content)
+            conversation['directory'] = extract_directory_from_content(combined_content)
+            if not conversation['project_id']:
+                conversation['project_id'] = extract_project_id_from_content(combined_content)
+
+        conversations.append(conversation)
+
+    conn.close()
+    return conversations
+
 
 def extract_cli_conversations(storage_dir):
     """
@@ -195,6 +381,9 @@ def extract_cli_conversations(storage_dir):
     part_dir = storage_dir / 'storage' / 'part'
     
     if not message_dir.exists():
+        db_conversations = extract_cli_conversations_db(storage_dir)
+        if db_conversations:
+            return db_conversations
         print(f"  Message directory not found: {message_dir}")
         return conversations
     
