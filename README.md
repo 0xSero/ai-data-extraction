@@ -90,6 +90,29 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### 9. `extract_pi_mono.py`
+Extracts from pi-mono / Pi coding agent
+- **Searches**: `~/.pi/agent/sessions/` recursively across encoded project subdirectories
+- **Formats**: JSONL session files with tree-structured entries
+- **Includes**:
+  - User/assistant messages
+  - Tool calls and tool results
+  - Bash executions
+  - Reasoning/thinking blocks
+  - Session metadata, model changes, and compaction summaries
+
+### 10. `extract_droid.py`
+Extracts from Droid CLI (Factory)
+- **Searches**: `~/.factory/sessions/` recursively across workspace subdirectories
+- **Formats**: JSONL session files plus per-session `.settings.json` sidecars
+- **Includes**:
+  - User/assistant messages
+  - Tool use and results
+  - Reasoning/thinking blocks
+  - Todo/compaction snapshots
+  - Session metadata (title, owner, mission/session type)
+  - Settings metadata (model, provider lock, token usage)
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -126,6 +149,12 @@ python3 extract_gemini.py
 # Extract from OpenCode
 python3 extract_opencode.py
 
+# Extract from pi-mono / Pi
+python3 extract_pi_mono.py
+
+# Extract from Droid CLI
+python3 extract_droid.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -143,7 +172,9 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+├── pi_mono_conversations_20250116_143215.jsonl
+└── droid_conversations_20250116_143230.jsonl
 ```
 
 ## 📊 Output Format
@@ -229,6 +260,25 @@ Each script follows this pattern:
 - **Format**: Hybrid (JSONL + SQLite)
 - **Location**: Similar to VSCode/Cursor structure
 - **Structure**: VSCode extension data format
+
+#### pi-mono / Pi Coding Agent
+- **Format**: JSONL (one entry per line)
+- **Location**: `~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<sessionId>.jsonl`
+- **Entries**:
+  - `session`: Session header (`cwd`, version, optional parent session)
+  - `message`: Conversation messages (`user`, `assistant`, `toolResult`, `bashExecution`)
+  - `model_change`, `thinking_level_change`, `session_info`
+  - `compaction`, `branch_summary`, `custom_message`
+
+#### Droid CLI (Factory)
+- **Format**: JSONL (one event per line) plus optional JSON sidecar metadata
+- **Location**: `~/.factory/sessions/[workspace]/[sessionId].jsonl`
+- **Sidecar**: `~/.factory/sessions/[workspace]/[sessionId].settings.json`
+- **Events**:
+  - `session_start`: Session metadata (title, owner, cwd, session type)
+  - `message`: User/assistant messages with content blocks
+  - `todo_state`: Todo list snapshots (optional)
+  - `compaction_state`: Compaction summary snapshots (optional)
 
 ## 🎓 Understanding the Data
 
@@ -470,6 +520,14 @@ conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
 ### Codex
 - ✅ Rollout JSONL format
 - ✅ Time-based session organization
+
+### pi-mono / Pi Coding Agent
+- ✅ Current JSONL session format in `~/.pi/agent/sessions`
+- ✅ Tree-structured session files with in-file branching
+
+### Droid CLI (Factory)
+- ✅ Current JSONL session format in `~/.factory/sessions`
+- ✅ Optional `.settings.json` sidecars for model/token metadata
 
 ## 📈 Performance Tips
 

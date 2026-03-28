@@ -78,6 +78,22 @@ else
 fi
 echo ""
 
+echo "🔍 Extracting from pi-mono..."
+if python3 extract_pi_mono.py 2>&1 | tee extracted_data/pi_mono_extraction.log | grep -q "Total conversations: [1-9]"; then
+    found_tools+=("pi-mono")
+else
+    not_found+=("pi-mono")
+fi
+echo ""
+
+echo "🔍 Extracting from Droid..."
+if python3 extract_droid.py 2>&1 | tee extracted_data/droid_extraction.log | grep -q "Total conversations: [1-9]"; then
+    found_tools+=("Droid")
+else
+    not_found+=("Droid")
+fi
+echo ""
+
 echo "================================================================================"
 echo "EXTRACTION SUMMARY"
 echo "================================================================================"
