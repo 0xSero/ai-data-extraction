@@ -90,6 +90,17 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### 9. `extract_pi_mono.py`
+Extracts from pi-mono / Pi coding agent
+- **Searches**: `~/.pi/agent/sessions/` recursively across encoded project subdirectories
+- **Formats**: JSONL session files with tree-structured entries
+- **Includes**:
+  - User/assistant messages
+  - Tool calls and tool results
+  - Bash executions
+  - Reasoning/thinking blocks
+  - Session metadata, model changes, and compaction summaries
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -126,6 +137,9 @@ python3 extract_gemini.py
 # Extract from OpenCode
 python3 extract_opencode.py
 
+# Extract from pi-mono / Pi
+python3 extract_pi_mono.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -143,7 +157,8 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+└── pi_mono_conversations_20250116_143215.jsonl
 ```
 
 ## 📊 Output Format
@@ -229,6 +244,15 @@ Each script follows this pattern:
 - **Format**: Hybrid (JSONL + SQLite)
 - **Location**: Similar to VSCode/Cursor structure
 - **Structure**: VSCode extension data format
+
+#### pi-mono / Pi Coding Agent
+- **Format**: JSONL (one entry per line)
+- **Location**: `~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<sessionId>.jsonl`
+- **Entries**:
+  - `session`: Session header (`cwd`, version, optional parent session)
+  - `message`: Conversation messages (`user`, `assistant`, `toolResult`, `bashExecution`)
+  - `model_change`, `thinking_level_change`, `session_info`
+  - `compaction`, `branch_summary`, `custom_message`
 
 ## 🎓 Understanding the Data
 
