@@ -77,7 +77,7 @@ Extracts from Google Gemini CLI
 ### 8. `extract_opencode.py`
 Extracts from OpenCode (CLI + Desktop)
 - **Searches**: 
-  - CLI: `~/.local/share/opencode/storage/` (Linux), `~/Library/Application Support/opencode` (macOS)
+  - CLI: `~/.local/share/opencode/` (Linux), `~/Library/Application Support/opencode` (macOS)
   - Desktop: `~/.local/share/ai.opencode.app` (Linux), `~/Library/Application Support/ai.opencode.app` (macOS)
 - **Formats**: SQLite (`opencode.db`), JSON files (sessions/messages/parts), and Tauri .dat files (desktop)
 - **Includes**:

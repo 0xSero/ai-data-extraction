@@ -4,7 +4,7 @@ Extract ALL OpenCode conversation data
 Supports: CLI (JSON files) and Desktop (Tauri .dat files)
 
 Storage locations:
-- CLI: ~/.local/share/opencode/storage/ (Linux/macOS)
+- CLI: ~/.local/share/opencode/ (Linux/macOS)
 - Desktop: Platform-specific Tauri app data directories
 
 Features:
