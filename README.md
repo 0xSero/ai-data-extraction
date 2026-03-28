@@ -90,6 +90,17 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### 9. `extract_droid.py`
+Extracts from Droid CLI (Factory)
+- **Searches**: `~/.factory/sessions/` recursively across workspace subdirectories
+- **Formats**: JSONL session files plus per-session `.settings.json` sidecars
+- **Includes**:
+  - User/assistant messages
+  - Tool use and results
+  - Reasoning/thinking blocks
+  - Todo and compaction snapshots
+  - Session metadata and optional settings metadata
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -126,6 +137,9 @@ python3 extract_gemini.py
 # Extract from OpenCode
 python3 extract_opencode.py
 
+# Extract from Droid CLI
+python3 extract_droid.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -143,7 +157,8 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+└── droid_conversations_20250116_143230.jsonl
 ```
 
 ## 📊 Output Format
@@ -229,6 +244,17 @@ Each script follows this pattern:
 - **Format**: Hybrid (JSONL + SQLite)
 - **Location**: Similar to VSCode/Cursor structure
 - **Structure**: VSCode extension data format
+
+#### Droid CLI (Factory)
+- **Format**: JSONL (one event per line) plus optional JSON sidecar metadata
+- **Location**: `~/.factory/sessions/[workspace]/[sessionId].jsonl`
+- **Sidecar**: `~/.factory/sessions/[workspace]/[sessionId].settings.json`
+- **Events**:
+  - `session_start`: Session metadata (title, owner, cwd, session type)
+  - `message`: User/assistant messages with content blocks
+  - `todo_state`: Todo list snapshots
+  - `compaction_state`: Compaction summary snapshots
+  - `session_end`: Session end timestamp when present
 
 ## 🎓 Understanding the Data
 
