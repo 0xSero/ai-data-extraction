@@ -6,10 +6,8 @@ Auto-discovers Claude Code installations on the device
 """
 
 import json
-import sqlite3
 from pathlib import Path
 from datetime import datetime
-import hashlib
 import platform
 import os
 
@@ -124,7 +122,6 @@ def extract_claude_project_conversations(project_dir):
 
                             # Extract text from content array
                             text_parts = []
-                            code_blocks = []
                             tool_uses = []
 
                             if isinstance(content, list):
@@ -214,7 +211,7 @@ def main():
             installation_stats[str(installation)] = len(conversations)
             print(f"   ✅ {len(conversations)} conversations")
         else:
-            print(f"   ⚠️  No conversations found")
+            print("   ⚠️  No conversations found")
 
     print()
     print("="*80)
@@ -258,7 +255,7 @@ def main():
     file_size = output_file.stat().st_size / 1024 / 1024
     print(f"✅ Saved to: {output_file}")
     print(f"   Size: {file_size:.2f} MB")
-    print(f"   Format: JSONL (one conversation per line)")
+    print("   Format: JSONL (one conversation per line)")
 
 if __name__ == '__main__':
     main()

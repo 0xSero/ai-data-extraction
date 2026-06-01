@@ -130,7 +130,7 @@ def extract_aiservice_conversations(db_path, workspace_id):
                     conversations.append(conv)
 
         conn.close()
-    except Exception as e:
+    except Exception:
         pass
 
     return conversations
@@ -237,7 +237,7 @@ def extract_workspace_composers(db_path, workspace_id):
                             })
 
         conn.close()
-    except Exception as e:
+    except Exception:
         pass
 
     return conversations
@@ -301,7 +301,7 @@ def extract_chat_mode(db_path, workspace_id):
                             })
 
         conn.close()
-    except Exception as e:
+    except Exception:
         pass
 
     return conversations
@@ -376,7 +376,7 @@ def extract_bubbles_for_composer(cursor, composer_id):
             except json.JSONDecodeError:
                 continue
 
-    except Exception as e:
+    except Exception:
         pass
 
     return bubbles
@@ -496,7 +496,7 @@ def extract_global_composers(global_db_path):
                         'storage_type': 'inline' if inline_conversation else 'separate'
                     })
 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError):
                 continue
 
         conn.close()
@@ -576,7 +576,7 @@ def main():
 
             stats['global_composer'] += len(convs)
         else:
-            print(f"   ⚠️  No global storage found")
+            print("   ⚠️  No global storage found")
 
     print()
     print("="*80)
@@ -619,7 +619,7 @@ def main():
     file_size = output_file.stat().st_size / 1024 / 1024
     print(f"✅ Saved to: {output_file}")
     print(f"   Size: {file_size:.2f} MB")
-    print(f"   Format: JSONL (one conversation per line)")
+    print("   Format: JSONL (one conversation per line)")
 
 if __name__ == '__main__':
     main()

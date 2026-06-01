@@ -187,15 +187,15 @@ def extract_from_sqlite(db_file, source):
                         conv = extract_conversation_from_data(data, source, str(db_file))
                         if conv:
                             conversations.append(conv)
-                    except:
+                    except Exception:
                         continue
 
-        except Exception as e:
+        except Exception:
             pass
 
         conn.close()
 
-    except Exception as e:
+    except Exception:
         pass
 
     return conversations
@@ -260,7 +260,7 @@ def main():
             installation_stats[str(installation)] = len(conversations)
             print(f"   ✅ {len(conversations)} conversations")
         else:
-            print(f"   ⚠️  No conversations found")
+            print("   ⚠️  No conversations found")
 
     print()
     print("="*80)
@@ -304,7 +304,7 @@ def main():
     file_size = output_file.stat().st_size / 1024 / 1024
     print(f"✅ Saved to: {output_file}")
     print(f"   Size: {file_size:.2f} MB")
-    print(f"   Format: JSONL (one conversation per line)")
+    print("   Format: JSONL (one conversation per line)")
 
 if __name__ == '__main__':
     main()
