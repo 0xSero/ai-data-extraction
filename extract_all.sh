@@ -78,6 +78,14 @@ else
 fi
 echo ""
 
+echo "🔍 Extracting from Devin..."
+if python3 extract_devin.py 2>&1 | tee extracted_data/devin_extraction.log | grep -q "Total conversations: [1-9]"; then
+    found_tools+=("Devin")
+else
+    not_found+=("Devin")
+fi
+echo ""
+
 echo "================================================================================"
 echo "EXTRACTION SUMMARY"
 echo "================================================================================"
