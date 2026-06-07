@@ -90,6 +90,16 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### 9. `extract_devin.py`
+Extracts from Devin
+- **Searches**: `~/.devin`, `~/Library/Application Support/Devin`, platform app data directories, and equivalent `devin`/`ai.devin.app` paths
+- **Formats**: JSON, JSONL, and SQLite databases (`.db`, `.sqlite`, `.sqlite3`, `.vscdb`)
+- **Includes**:
+  - User/assistant messages
+  - Tool calls, tool results, edits, and diffs
+  - File references, code context, and workspace metadata
+  - Session/conversation IDs, titles, timestamps, repositories, and project paths
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -126,6 +136,9 @@ python3 extract_gemini.py
 # Extract from OpenCode
 python3 extract_opencode.py
 
+# Extract from Devin
+python3 extract_devin.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -143,7 +156,8 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+└── devin_conversations_20250116_143215.jsonl
 ```
 
 ## 📊 Output Format
@@ -229,6 +243,11 @@ Each script follows this pattern:
 - **Format**: Hybrid (JSONL + SQLite)
 - **Location**: Similar to VSCode/Cursor structure
 - **Structure**: VSCode extension data format
+
+#### Devin
+- **Format**: Hybrid (JSON, JSONL + SQLite)
+- **Locations**: `~/.devin`, platform app data directories, and equivalent `devin`/`ai.devin.app` paths
+- **Structure**: Session, conversation, history, event, or transcript objects with nested message arrays
 
 ## 🎓 Understanding the Data
 
