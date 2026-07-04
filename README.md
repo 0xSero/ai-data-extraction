@@ -90,6 +90,19 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### 9. `extract_cursor_cli.py`
+Extracts from the `cursor-agent` terminal CLI (the Composer/Agent history that the GUI
+extractor in `extract_cursor.py` does not cover)
+- **Searches**: `~/.cursor/chats/<chatId>/<agentId>/store.db` (all platforms)
+- **Formats**: content-addressed SQLite blob store
+  - `blobs` table: `id` (sha256 hex) → `data`; message blobs are JSON (`{role, content, id, ...}`),
+    tree nodes are protobuf-framed lists of 32-byte child blob-id refs
+  - `meta` table: hex-encoded JSON with `agentId`, `latestRootBlobId`, `name`, `mode`, `createdAt`
+- **Includes**:
+  - Ordered messages reconstructed by DFS-walking refs from `latestRootBlobId`
+  - System/user/assistant/tool turns with full content
+  - Chat/agent ids, title, mode, created-at, code-context and diff flags
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -125,6 +138,9 @@ python3 extract_gemini.py
 
 # Extract from OpenCode
 python3 extract_opencode.py
+
+# Extract from Cursor CLI (cursor-agent)
+python3 extract_cursor_cli.py
 
 # Extract from ALL tools at once
 ./extract_all.sh

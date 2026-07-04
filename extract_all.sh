@@ -30,6 +30,14 @@ else
 fi
 echo ""
 
+echo "🔍 Extracting from Cursor CLI (cursor-agent)..."
+if python3 extract_cursor_cli.py 2>&1 | tee extracted_data/cursor_cli_extraction.log | grep -q "Total conversations: [1-9]"; then
+    found_tools+=("Cursor CLI")
+else
+    not_found+=("Cursor CLI")
+fi
+echo ""
+
 echo "🔍 Extracting from Codex..."
 if python3 extract_codex.py 2>&1 | tee extracted_data/codex_extraction.log | grep -q "Total conversations: [1-9]"; then
     found_tools+=("Codex")
