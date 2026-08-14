@@ -90,5 +90,28 @@ class SuspiciousTokens(unittest.TestCase):
         self.assertEqual(find_suspicious_tokens("just some ordinary english words"), [])
 
 
+class ScrubJson(unittest.TestCase):
+    def setUp(self):
+        self.s = Sanitizer(use_detect_secrets=False)
+
+    def test_redacts_by_key_name(self):
+        obj = {"apiKey": "totally-innocent-looking", "name": "myproj"}
+        out, counts = self.s.scrub_json(obj)
+        self.assertEqual(out["apiKey"], "[REDACTED_SECRET:key:apiKey]")
+        self.assertEqual(out["name"], "myproj")
+        self.assertGreaterEqual(counts["secrets"], 1)
+
+    def test_recurses_and_scrubs_values(self):
+        obj = {"env": {"TOKEN": "abc"}, "note": "path /Users/joe/x"}
+        out, counts = self.s.scrub_json(obj)
+        self.assertEqual(out["env"]["TOKEN"], "[REDACTED_SECRET:key:TOKEN]")
+        self.assertIn("[PATH]", out["note"])
+
+    def test_scrubs_list_of_strings(self):
+        obj = {"args": ["ok", "sk-ant-" + "z" * 40]}
+        out, counts = self.s.scrub_json(obj)
+        self.assertNotIn("sk-ant-", out["args"][1])
+
+
 if __name__ == "__main__":
     unittest.main()

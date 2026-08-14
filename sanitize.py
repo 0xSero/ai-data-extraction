@@ -49,6 +49,10 @@ _IPV6 = re.compile(
     r"(?![0-9A-Za-z_:.])"
 )
 
+_SECRET_KEY_NAME = re.compile(
+    r"(?i)(password|passwd|secret|token|api[_-]?key|access[_-]?key|"
+    r"authorization|bearer|credential|private[_-]?key)")
+
 _TOKEN = re.compile(r"[A-Za-z0-9+/=_\-]{20,}")
 
 
@@ -130,3 +134,26 @@ class Sanitizer:
         counts["ips"] += n
 
         return text, counts
+
+    def _merge(self, into, other):
+        for k, v in other.items():
+            into[k] = into.get(k, 0) + v
+
+    def scrub_json(self, obj):
+        counts = {"secrets": 0, "paths": 0, "emails": 0, "ips": 0}
+
+        def walk(node, key_name=None):
+            if isinstance(node, dict):
+                return {k: walk(v, k) for k, v in node.items()}
+            if isinstance(node, list):
+                return [walk(v, key_name) for v in node]
+            if isinstance(node, str):
+                if key_name is not None and _SECRET_KEY_NAME.search(key_name):
+                    counts["secrets"] += 1
+                    return "[REDACTED_SECRET:key:%s]" % key_name
+                scrubbed, c = self.scrub_text(node)
+                self._merge(counts, c)
+                return scrubbed
+            return node
+
+        return walk(obj), counts
