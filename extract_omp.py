@@ -24,7 +24,9 @@ No dependencies beyond the Python 3 standard library.
 import json
 import os
 import platform
+import shutil
 import sqlite3
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -122,7 +124,11 @@ def extract_session(jsonl_file, include_thinking=True, include_developer=True):
 
             if rtype in STATE_TYPES:
                 if rtype == 'model_change':
-                    current_model = obj.get('model')
+                    # Older builds emit "model"; newer ones "modelId" (+ "provider").
+                    current_model = obj.get('model') or obj.get('modelId')
+                    provider = obj.get('provider')
+                    if current_model and provider and '/' not in current_model:
+                        current_model = f'{provider}/{current_model}'
                     if current_model and current_model not in models:
                         models.append(current_model)
                 continue
@@ -137,7 +143,27 @@ def extract_session(jsonl_file, include_thinking=True, include_developer=True):
                 })
                 continue
 
-            if rtype not in ('message', 'custom_message'):
+            if rtype == 'custom_message':
+                # Extension-authored turns keep content at the top level, not
+                # inside a nested "message" object.
+                content = obj.get('content')
+                text = content if isinstance(content, str) else _text(_parts(content))
+                if not text:
+                    continue
+                messages.append({
+                    'role': obj.get('role') or obj.get('attribution') or 'system',
+                    'content': text,
+                    'timestamp': obj.get('timestamp'),
+                    'id': obj.get('id'),
+                    'parent_id': obj.get('parentId'),
+                    'custom': True,
+                    'custom_type': obj.get('customType'),
+                    'display': obj.get('display'),
+                    'details': obj.get('details'),
+                })
+                continue
+
+            if rtype != 'message':
                 # 'custom' and anything else is extension-private; skip.
                 continue
 
@@ -189,9 +215,6 @@ def extract_session(jsonl_file, include_thinking=True, include_developer=True):
                 if tool_calls:
                     msg['tool_calls'] = tool_calls
 
-            if rtype == 'custom_message':
-                msg['custom'] = True
-
             if msg['content'] or msg.get('tool_calls') or msg.get('thinking'):
                 messages.append(msg)
 
@@ -223,19 +246,31 @@ def extract_session(jsonl_file, include_thinking=True, include_developer=True):
 
 
 def extract_prompt_history(root):
-    """Extract the standalone prompt history database (best effort)."""
+    """Extract the standalone prompt history database (best effort).
+
+    omp runs history.db in WAL mode, so committed-but-uncheckpointed rows live
+    in the -wal sidecar. Opening with immutable=1 would ignore that sidecar and
+    silently return only the older main-file rows. Instead snapshot the db and
+    its -wal/-shm companions into a temp dir and read the copy: WAL-aware,
+    while never writing to the live files.
+    """
     db = root / 'history.db'
     if not db.exists():
         return []
     rows = []
     try:
-        # Read-only and immutable: never mutate a live WAL.
-        conn = sqlite3.connect(f'file:{db}?mode=ro&immutable=1', uri=True)
-        conn.row_factory = sqlite3.Row
-        for r in conn.execute('SELECT * FROM history'):
-            rows.append({k: r[k] for k in r.keys()})
-        conn.close()
-    except sqlite3.Error as e:
+        with tempfile.TemporaryDirectory(prefix='omp-history-') as tmp:
+            snapshot = Path(tmp) / db.name
+            for suffix in ('', '-wal', '-shm'):
+                src = db.with_name(db.name + suffix)
+                if src.exists():
+                    shutil.copy2(src, snapshot.with_name(snapshot.name + suffix))
+            conn = sqlite3.connect(f'file:{snapshot}?mode=ro', uri=True)
+            conn.row_factory = sqlite3.Row
+            for r in conn.execute('SELECT * FROM history'):
+                rows.append({k: r[k] for k in r.keys()})
+            conn.close()
+    except (sqlite3.Error, OSError) as e:
         print(f'   ⚠️  history.db unreadable: {e}')
     return rows
 
@@ -333,11 +368,17 @@ def main():
     print('   Format: JSONL (one conversation per line)')
 
     if history_rows:
-        hist_file = output_dir / f'omp_prompt_history_{timestamp}.jsonl'
+        # Prompt-history rows do not follow the conversation schema, so they must
+        # stay out of extracted_data/*.jsonl — extract_all.sh wildcards that glob
+        # when counting conversations and building ALL_CONVERSATIONS.
+        hist_dir = output_dir / 'omp_prompt_history'
+        hist_dir.mkdir(exist_ok=True)
+        hist_file = hist_dir / f'omp_prompt_history_{timestamp}.jsonl'
         with open(hist_file, 'w') as f:
             for row in history_rows:
                 f.write(json.dumps(row, ensure_ascii=False, default=str) + '\n')
         print(f'✅ Saved to: {hist_file}')
+        print('   (kept in a subdirectory: not a conversation-schema file)')
 
 
 if __name__ == '__main__':
