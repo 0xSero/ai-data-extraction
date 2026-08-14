@@ -320,7 +320,9 @@ def build_export(installations, include, level, use_detect_secrets, now):
 
     multi = len(installations) > 1
     used_ns = {}
-    for inst in installations:
+    # Sort for deterministic namespace labels (discovery returns an unordered set),
+    # so the manifest is reproducible across runs.
+    for inst in sorted(installations, key=lambda p: (p.name, str(p))):
         if multi:
             base = inst.name or "install"
             n = used_ns.get(base, 0)
