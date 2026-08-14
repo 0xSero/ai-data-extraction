@@ -216,3 +216,23 @@ class BuildAndWrite(unittest.TestCase):
                 data = (bundle / entry["path"]).read_bytes()
                 self.assertEqual(entry["bytes"], len(data))
                 self.assertEqual(entry["sha256"], hashlib.sha256(data).hexdigest())
+
+    def test_malformed_config_does_not_crash_and_warns(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = Path(d) / ".claude"
+            inst.mkdir(parents=True)
+            (inst / "settings.json").write_text("{ not valid json ")
+            (inst / "CLAUDE.md").write_text("hello world")
+
+            export = ex.build_export([inst], {"config"}, "strict", False, "NOW")
+
+            self.assertIn("config/CLAUDE.md", export["files"])
+            self.assertNotIn("config/", export["files"])
+            self.assertTrue(
+                all(entry["path"] != "config/" for entry in export["manifest"]["files"]))
+
+            out = Path(d) / "out"
+            bundle = ex.write_bundle(export, out, dry_run=False)  # must not raise
+
+            self.assertTrue(
+                any("settings.json" in w for w in export["manifest"]["warnings"]))

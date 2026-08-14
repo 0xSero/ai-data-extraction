@@ -316,7 +316,7 @@ def build_export(installations, include, level, use_detect_secrets, now):
         if "config" in include:
             for rec in collect_config(inst, sanitizer):
                 warnings.extend(rec["warnings"])
-                if rec["content"] is None:
+                if rec["content"] is None or not rec["rel_path"]:
                     continue
                 add_file("config/" + rec["rel_path"], rec["content"], rec["redactions"])
                 _merge_counts(redaction_counts, rec["redactions"])
