@@ -268,6 +268,15 @@ def collect_conversations(installation, sanitizer, level):
                     if field in m:
                         dropped[field] = dropped.get(field, 0) + 1
                         del m[field]
+                # Drop tool-output blocks embedded in user content lists
+                c = m.get("content")
+                if isinstance(c, list):
+                    kept = [b for b in c
+                            if isinstance(b, dict) and b.get("type") == "text"]
+                    removed = len(c) - len(kept)
+                    if removed:
+                        dropped["content_blocks"] = dropped.get("content_blocks", 0) + removed
+                    m["content"] = "\n".join((b.get("text") or "") for b in kept)
                 m = _sanitize_obj(m, sanitizer, counts)
             else:  # balanced: keep fields, sanitize everything
                 m = _sanitize_obj(m, sanitizer, counts)

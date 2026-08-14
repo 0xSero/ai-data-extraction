@@ -123,3 +123,43 @@ class CollectConversations(unittest.TestCase):
             blob = json.dumps(convs)
             self.assertIn("tool_uses", blob)         # kept
             self.assertNotIn("/Users/joe", blob)      # but path sanitized
+
+    def test_strict_drops_toolresult_block_in_user_content(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = Path(d) / ".claude"
+            proj = inst / "projects" / "p"
+            proj.mkdir(parents=True)
+            lines = [
+                {"type": "user", "message": {"content": [
+                    {"type": "text", "text": "see this"},
+                    {"type": "tool_result", "content": "FILE BODY /Users/joe/secret.py ghp_" + "a" * 36}
+                ]}, "timestamp": "t1"},
+            ]
+            (proj / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
+            convs, counts, dropped = ex.collect_conversations(
+                inst, Sanitizer(use_detect_secrets=False), "strict")
+            blob = json.dumps(convs)
+            self.assertNotIn("FILE BODY", blob)      # tool output dropped
+            self.assertNotIn("ghp_", blob)           # secret redacted
+            self.assertIn("see this", blob)          # text kept
+            self.assertGreaterEqual(dropped.get("content_blocks", 0), 1)
+
+    def test_balanced_keeps_but_sanitizes_user_content_block(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = Path(d) / ".claude"
+            proj = inst / "projects" / "p"
+            proj.mkdir(parents=True)
+            lines = [
+                {"type": "user", "message": {"content": [
+                    {"type": "text", "text": "see this"},
+                    {"type": "tool_result", "content": "FILE BODY /Users/joe/secret.py ghp_" + "a" * 36}
+                ]}, "timestamp": "t1"},
+            ]
+            (proj / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
+            convs, counts, dropped = ex.collect_conversations(
+                inst, Sanitizer(use_detect_secrets=False), "balanced")
+            blob = json.dumps(convs)
+            self.assertIn("FILE BODY", blob)         # tool output kept
+            self.assertNotIn("/Users/joe", blob)      # path sanitized
+            self.assertNotIn("ghp_", blob)            # secret redacted
+            self.assertIn("see this", blob)           # text kept
