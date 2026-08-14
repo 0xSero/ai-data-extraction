@@ -5,6 +5,8 @@ skills, prompt patterns, and optionally sanitized conversations.
 All processing is local. Standard library only.
 """
 
+import argparse
+import hashlib
 import json
 import os
 import platform
@@ -285,3 +287,154 @@ def collect_conversations(installation, sanitizer, level):
             "messages": clean, "source": "claude-code", "session_id": f.stem,
         })
     return conversations, counts, dropped
+
+
+def _merge_counts(into, other):
+    for k, v in other.items():
+        into[k] = into.get(k, 0) + v
+
+
+def build_export(installations, include, level, use_detect_secrets, now):
+    sanitizer = Sanitizer(use_detect_secrets=use_detect_secrets)
+    files = {}
+    redaction_counts = {"secrets": 0, "paths": 0, "emails": 0, "ips": 0}
+    dropped_total = {}
+    warnings = []
+    file_entries = []
+
+    def add_file(rel, content, redactions):
+        files[rel] = content
+        data = content.encode("utf-8")
+        file_entries.append({
+            "path": rel,
+            "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "redactions": redactions,
+        })
+
+    for inst in installations:
+        if "config" in include:
+            for rec in collect_config(inst, sanitizer):
+                warnings.extend(rec["warnings"])
+                if rec["content"] is None:
+                    continue
+                add_file("config/" + rec["rel_path"], rec["content"], rec["redactions"])
+                _merge_counts(redaction_counts, rec["redactions"])
+
+        if "prompts" in include:
+            recs, counts = collect_prompts(inst, sanitizer)
+            if recs:
+                content = "\n".join(json.dumps(r, ensure_ascii=False) for r in recs)
+                add_file("prompts/prompt_patterns.jsonl", content, counts)
+                _merge_counts(redaction_counts, counts)
+
+        if "conversations" in include:
+            convs, counts, dropped = collect_conversations(inst, sanitizer, level)
+            if convs:
+                content = "\n".join(json.dumps(c, ensure_ascii=False) for c in convs)
+                add_file("conversations/conversations.sanitized.jsonl", content, counts)
+                _merge_counts(redaction_counts, counts)
+                _merge_counts(dropped_total, dropped)
+
+    # High-entropy leftovers across everything that will be written
+    suspicious = 0
+    for content in files.values():
+        suspicious += len(find_suspicious_tokens(content))
+    if suspicious:
+        warnings.append(
+            "%d high-entropy token(s) survived redaction; review before sharing" % suspicious)
+
+    manifest = {
+        "generated_at": now,
+        "tool": "claude-code",
+        "asset_classes": sorted(include),
+        "redaction_level": level,
+        "detect_secrets": sanitizer.detect_secrets_status,
+        "redaction_counts": redaction_counts,
+        "dropped": dropped_total,
+        "files": file_entries,
+        "warnings": warnings,
+    }
+    return {"manifest": manifest, "files": files}
+
+
+def write_bundle(export, output_dir, dry_run):
+    output_dir = Path(output_dir)
+    bundle = output_dir / ("claude_harness_export_" + _timestamp())
+    bundle.mkdir(parents=True, exist_ok=True)
+    (bundle / "MANIFEST.json").write_text(
+        json.dumps(export["manifest"], indent=2, ensure_ascii=False), encoding="utf-8")
+    if not dry_run:
+        for rel, content in export["files"].items():
+            dest = bundle / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+    return bundle
+
+
+def _timestamp():
+    from datetime import datetime
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _now_iso():
+    from datetime import datetime
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def parse_args(argv):
+    p = argparse.ArgumentParser(
+        description="Enterprise-safe export of a Claude Code harness.")
+    p.add_argument("--include", default="config,prompts",
+                   help="Comma list of config,prompts,conversations (default: config,prompts)")
+    p.add_argument("--exclude", default="",
+                   help="Comma list to remove from the include set")
+    p.add_argument("--redact-level", default="strict", choices=["strict", "balanced"])
+    p.add_argument("--dry-run", action="store_true",
+                   help="Emit MANIFEST.json only; write no bundle content")
+    p.add_argument("--output", default="extracted_data", help="Output directory")
+    p.add_argument("--no-detect-secrets", action="store_true",
+                   help="Do not use detect_secrets even if installed")
+    return p.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    include = {x.strip() for x in args.include.split(",") if x.strip()}
+    include -= {x.strip() for x in args.exclude.split(",") if x.strip()}
+    valid = {"config", "prompts", "conversations"}
+    include &= valid
+    if not include:
+        print("Nothing to export: --include resolved to an empty set.")
+        return 1
+
+    installations = find_claude_installations()
+    if not installations:
+        print("No Claude Code installations found.")
+        return 1
+
+    print("Found %d installation(s). Exporting: %s (level=%s)%s" % (
+        len(installations), ", ".join(sorted(include)), args.redact_level,
+        " [DRY RUN]" if args.dry_run else ""))
+
+    export = build_export(
+        installations, include, args.redact_level,
+        use_detect_secrets=not args.no_detect_secrets, now=_now_iso())
+    bundle = write_bundle(export, args.output, dry_run=args.dry_run)
+
+    m = export["manifest"]
+    print("Manifest: %s" % (bundle / "MANIFEST.json"))
+    print("Redactions: %s" % m["redaction_counts"])
+    if m["dropped"]:
+        print("Dropped (strict): %s" % m["dropped"])
+    for w in m["warnings"]:
+        print("WARNING: %s" % w)
+    if args.dry_run:
+        print("Dry run: no content written. Review the manifest, then re-run without --dry-run.")
+    else:
+        print("Bundle written to: %s" % bundle)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

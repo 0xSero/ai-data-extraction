@@ -90,6 +90,29 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### Enterprise-Safe Harness Export (`export_claude_harness.py`)
+
+For sensitive or enterprise environments where you want to keep your **portable
+learnings** - `CLAUDE.md`, memory, skills, slash commands, settings, and your
+personal prompt patterns - without carrying out proprietary data.
+
+```bash
+# Safe defaults: config + prompt patterns only, strict redaction
+python3 export_claude_harness.py
+
+# Review what WOULD be exported without writing any content
+python3 export_claude_harness.py --dry-run
+
+# Include sanitized conversations too (opt-in, highest risk)
+python3 export_claude_harness.py --include config,prompts,conversations
+```
+
+Every run writes a `MANIFEST.json` listing every file, redaction counts, and
+warnings, so an export can be reviewed before it leaves the environment.
+Conversations are never included unless explicitly requested. Secrets, emails,
+IPs, and user paths are redacted; in `strict` mode (default) code bodies,
+diffs, and tool results are dropped entirely.
+
 ## 🚀 Quick Start
 
 ### Installation

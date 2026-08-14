@@ -163,3 +163,56 @@ class CollectConversations(unittest.TestCase):
             self.assertNotIn("/Users/joe", blob)      # path sanitized
             self.assertNotIn("ghp_", blob)            # secret redacted
             self.assertIn("see this", blob)           # text kept
+
+
+class BuildAndWrite(unittest.TestCase):
+    def _full_install(self, root):
+        inst = Path(root) / ".claude"
+        proj = inst / "projects" / "p"
+        proj.mkdir(parents=True)
+        (inst / "CLAUDE.md").write_text("hi /Users/fabian/x")
+        (inst / "settings.json").write_text(json.dumps({"token": "ghp_" + "a" * 36}))
+        lines = [{"type": "user", "message": {"content": "leak sk-ant-" + "z" * 40}}]
+        (proj / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
+        return inst
+
+    def test_default_excludes_conversations(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = self._full_install(d)
+            export = ex.build_export([inst], {"config", "prompts"}, "strict", False, "NOW")
+            self.assertNotIn(
+                "conversations/conversations.sanitized.jsonl", export["files"])
+            self.assertIn("config/CLAUDE.md", export["files"])
+            self.assertIn("prompts/prompt_patterns.jsonl", export["files"])
+
+    def test_no_planted_secret_survives(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = self._full_install(d)
+            export = ex.build_export(
+                [inst], {"config", "prompts", "conversations"}, "strict", False, "NOW")
+            blob = "\n".join(export["files"].values())
+            self.assertNotIn("ghp_", blob)
+            self.assertNotIn("sk-ant-", blob)
+            self.assertNotIn("fabian", blob)
+
+    def test_dry_run_writes_only_manifest(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = self._full_install(d)
+            export = ex.build_export([inst], {"config"}, "strict", False, "NOW")
+            out = Path(d) / "out"
+            bundle = ex.write_bundle(export, out, dry_run=True)
+            written = [p.name for p in bundle.rglob("*") if p.is_file()]
+            self.assertEqual(written, ["MANIFEST.json"])
+
+    def test_manifest_hashes_match_written_files(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            inst = self._full_install(d)
+            export = ex.build_export([inst], {"config"}, "strict", False, "NOW")
+            out = Path(d) / "out"
+            bundle = ex.write_bundle(export, out, dry_run=False)
+            manifest = json.loads((bundle / "MANIFEST.json").read_text())
+            for entry in manifest["files"]:
+                data = (bundle / entry["path"]).read_bytes()
+                self.assertEqual(entry["bytes"], len(data))
+                self.assertEqual(entry["sha256"], hashlib.sha256(data).hexdigest())
