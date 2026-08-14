@@ -59,3 +59,29 @@ class CollectConfig(unittest.TestCase):
             self.assertNotIn("settings.sanitized.json", paths)
             all_warnings = [w for r in recs for w in r["warnings"]]
             self.assertTrue(any("settings.json" in w for w in all_warnings))
+
+
+class CollectPrompts(unittest.TestCase):
+    def _install_with_session(self, root):
+        inst = Path(root) / ".claude"
+        proj = inst / "projects" / "myproj"
+        proj.mkdir(parents=True)
+        lines = [
+            {"type": "user", "message": {"content": "Fix the bug near /Users/fabian/x.py"},
+             "timestamp": "t1"},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "sure"}]},
+             "timestamp": "t2"},
+        ]
+        (proj / "sess1.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
+        return inst
+
+    def test_keeps_only_sanitized_user_prompts(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = self._install_with_session(d)
+            recs, counts = ex.collect_prompts(inst, Sanitizer(use_detect_secrets=False))
+            self.assertEqual(len(recs), 1)
+            self.assertEqual(recs[0]["source_session"], "sess1")
+            self.assertNotIn("fabian", recs[0]["text"])
+            self.assertIn("[PATH]", recs[0]["text"])
+            self.assertNotIn("sure", json.dumps(recs))
+            self.assertEqual(counts["paths"], 1)

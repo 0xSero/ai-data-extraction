@@ -132,3 +132,59 @@ def collect_config(installation, sanitizer):
         records.append(_record("", "", {}, all_warnings))
 
     return records
+
+
+def _iter_session_files(installation):
+    projects = installation / "projects"
+    if projects.exists():
+        for proj in projects.iterdir():
+            if proj.is_dir():
+                for f in proj.glob("*.jsonl"):
+                    if not f.name.startswith("agent-"):
+                        yield f
+    else:
+        for f in installation.glob("*.jsonl"):
+            if not f.name.startswith("agent-"):
+                yield f
+
+
+def _user_text(obj):
+    """Return the plain user prompt text from a JSONL 'user' event, or None."""
+    if obj.get("type") != "user":
+        return None
+    content = obj.get("message", {}).get("content", "")
+    if isinstance(content, str):
+        return content or None
+    # content can be a list of blocks; keep only text blocks
+    if isinstance(content, list):
+        parts = [b.get("text", "") for b in content
+                 if isinstance(b, dict) and b.get("type") == "text"]
+        joined = "\n".join(p for p in parts if p)
+        return joined or None
+    return None
+
+
+def collect_prompts(installation, sanitizer):
+    records = []
+    counts = {"secrets": 0, "paths": 0, "emails": 0, "ips": 0}
+    for f in _iter_session_files(installation):
+        session_id = f.stem
+        text_lines = _read_text(f)
+        if text_lines is None:
+            continue
+        for line in text_lines.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            ut = _user_text(obj)
+            if not ut:
+                continue
+            scrubbed, c = sanitizer.scrub_text(ut)
+            for k, v in c.items():
+                counts[k] += v
+            records.append({"text": scrubbed, "source_session": session_id})
+    return records, counts
