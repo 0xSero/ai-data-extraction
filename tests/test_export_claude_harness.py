@@ -85,3 +85,41 @@ class CollectPrompts(unittest.TestCase):
             self.assertIn("[PATH]", recs[0]["text"])
             self.assertNotIn("sure", json.dumps(recs))
             self.assertEqual(counts["paths"], 1)
+
+
+class CollectConversations(unittest.TestCase):
+    def _install(self, root):
+        inst = Path(root) / ".claude"
+        proj = inst / "projects" / "p"
+        proj.mkdir(parents=True)
+        lines = [
+            {"type": "user", "message": {"content": "hello token ghp_" + "a" * 36},
+             "timestamp": "t1"},
+            {"type": "assistant",
+             "message": {"content": [{"type": "text", "text": "answer"},
+                                     {"type": "tool_use", "name": "Edit", "input": {"x": 1}}]},
+             "timestamp": "t2"},
+            {"type": "tool_result", "toolResult": {"stdout": "SECRET /Users/joe/a"}},
+        ]
+        (proj / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
+        return inst
+
+    def test_strict_drops_tools_and_sanitizes(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = self._install(d)
+            convs, counts, dropped = ex.collect_conversations(
+                inst, Sanitizer(use_detect_secrets=False), "strict")
+            blob = json.dumps(convs)
+            self.assertNotIn("ghp_", blob)          # user secret redacted
+            self.assertNotIn("tool_use", blob)       # tool use dropped
+            self.assertNotIn("SECRET /Users/joe", blob)  # tool result dropped
+            self.assertGreaterEqual(dropped.get("tool_uses", 0), 1)
+
+    def test_balanced_keeps_but_sanitizes_tools(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = self._install(d)
+            convs, counts, dropped = ex.collect_conversations(
+                inst, Sanitizer(use_detect_secrets=False), "balanced")
+            blob = json.dumps(convs)
+            self.assertIn("tool_uses", blob)         # kept
+            self.assertNotIn("/Users/joe", blob)      # but path sanitized

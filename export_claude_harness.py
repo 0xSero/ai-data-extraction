@@ -188,3 +188,91 @@ def collect_prompts(installation, sanitizer):
                 counts[k] += v
             records.append({"text": scrubbed, "source_session": session_id})
     return records, counts
+
+
+_DROP_FIELDS = ("tool_use", "tool_uses", "tool_results",
+                "suggested_diffs", "diff_histories", "code_context")
+
+
+def _sanitize_obj(obj, sanitizer, counts):
+    """Recursively sanitize every string in a JSON-like object, merging counts."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_obj(v, sanitizer, counts) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_obj(v, sanitizer, counts) for v in obj]
+    if isinstance(obj, str):
+        scrubbed, c = sanitizer.scrub_text(obj)
+        for k, v in c.items():
+            counts[k] += v
+        return scrubbed
+    return obj
+
+
+def _parse_messages(session_file):
+    """Reduce a session JSONL into simple role/content messages with optional tool fields."""
+    messages = []
+    text = _read_text(session_file)
+    if text is None:
+        return messages
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        t = obj.get("type")
+        if t == "user":
+            content = obj.get("message", {}).get("content", "")
+            if content:
+                messages.append({"role": "user", "content": content,
+                                 "timestamp": obj.get("timestamp")})
+        elif t == "assistant":
+            content = obj.get("message", {}).get("content", [])
+            text_parts, tool_uses = [], []
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        if item.get("type") == "text":
+                            text_parts.append(item.get("text", ""))
+                        elif item.get("type") == "tool_use":
+                            tool_uses.append(item)
+            elif isinstance(content, str):
+                text_parts.append(content)
+            msg = {"role": "assistant", "content": "\n".join(text_parts),
+                   "timestamp": obj.get("timestamp")}
+            if tool_uses:
+                msg["tool_uses"] = tool_uses
+            messages.append(msg)
+        elif t == "tool_result":
+            tr = obj.get("toolResult", {})
+            if tr and messages:
+                messages[-1].setdefault("tool_results", []).append(tr)
+    return messages
+
+
+def collect_conversations(installation, sanitizer, level):
+    conversations = []
+    counts = {"secrets": 0, "paths": 0, "emails": 0, "ips": 0}
+    dropped = {}
+    for f in _iter_session_files(installation):
+        messages = _parse_messages(f)
+        if not messages:
+            continue
+        clean = []
+        for msg in messages:
+            m = dict(msg)
+            if level == "strict":
+                for field in _DROP_FIELDS:
+                    if field in m:
+                        dropped[field] = dropped.get(field, 0) + 1
+                        del m[field]
+                m = _sanitize_obj(m, sanitizer, counts)
+            else:  # balanced: keep fields, sanitize everything
+                m = _sanitize_obj(m, sanitizer, counts)
+            clean.append(m)
+        conversations.append({
+            "messages": clean, "source": "claude-code", "session_id": f.stem,
+        })
+    return conversations, counts, dropped
