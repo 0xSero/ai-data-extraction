@@ -78,6 +78,14 @@ else
 fi
 echo ""
 
+echo "🔍 Extracting from omp (Oh My Pi)..."
+if python3 extract_omp.py 2>&1 | tee extracted_data/omp_extraction.log | grep -q "Total conversations: [1-9]"; then
+    found_tools+=("omp")
+else
+    not_found+=("omp")
+fi
+echo ""
+
 echo "================================================================================"
 echo "EXTRACTION SUMMARY"
 echo "================================================================================"
