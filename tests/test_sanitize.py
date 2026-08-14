@@ -112,6 +112,22 @@ class ScrubJson(unittest.TestCase):
         out, counts = self.s.scrub_json(obj)
         self.assertNotIn("sk-ant-", out["args"][1])
 
+    def test_redacts_nonstring_secret_values(self):
+        obj = {"password": 123456, "apiKey": None, "credential": True}
+        out, counts = self.s.scrub_json(obj)
+        self.assertEqual(out["password"], "[REDACTED_SECRET:key:password]")
+        self.assertEqual(out["apiKey"], "[REDACTED_SECRET:key:apiKey]")
+        self.assertEqual(out["credential"], "[REDACTED_SECRET:key:credential]")
+        self.assertGreaterEqual(counts["secrets"], 3)
+
+    def test_redacts_nested_object_under_secret_key(self):
+        obj = {"password": {"value": "plain-secret-123"}}
+        out, counts = self.s.scrub_json(obj)
+        self.assertEqual(out["password"], "[REDACTED_SECRET:key:password]")
+        import json
+        self.assertNotIn("plain-secret-123", json.dumps(out))
+        self.assertGreaterEqual(counts["secrets"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

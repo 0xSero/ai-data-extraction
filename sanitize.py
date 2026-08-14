@@ -143,14 +143,14 @@ class Sanitizer:
         counts = {"secrets": 0, "paths": 0, "emails": 0, "ips": 0}
 
         def walk(node, key_name=None):
+            if key_name is not None and _SECRET_KEY_NAME.search(key_name):
+                counts["secrets"] += 1
+                return "[REDACTED_SECRET:key:%s]" % key_name
             if isinstance(node, dict):
                 return {k: walk(v, k) for k, v in node.items()}
             if isinstance(node, list):
                 return [walk(v, key_name) for v in node]
             if isinstance(node, str):
-                if key_name is not None and _SECRET_KEY_NAME.search(key_name):
-                    counts["secrets"] += 1
-                    return "[REDACTED_SECRET:key:%s]" % key_name
                 scrubbed, c = self.scrub_text(node)
                 self._merge(counts, c)
                 return scrubbed
