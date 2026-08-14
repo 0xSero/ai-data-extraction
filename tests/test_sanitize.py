@@ -58,6 +58,27 @@ class ScrubTextSecrets(unittest.TestCase):
     def test_disabled_detect_secrets_status(self):
         self.assertEqual(self.s.detect_secrets_status, "disabled")
 
+    def test_redacts_bracket_adjacent_assignment(self):
+        text = "entry: [secret=verylonghexvalue1234567890abcdef]"
+        out, counts = self.s.scrub_text(text)
+        self.assertNotIn("verylonghexvalue1234567890abcdef", out)
+        self.assertGreaterEqual(counts["secrets"], 1)
+
+    def test_redacts_compressed_ipv6(self):
+        text = "host fe80::1 and ::1 and 2001:db8::5 up"
+        out, counts = self.s.scrub_text(text)
+        self.assertNotIn("fe80::1", out)
+        self.assertNotIn("::1", out)
+        self.assertNotIn("2001:db8::5", out)
+        self.assertGreaterEqual(counts["ips"], 3)
+
+    def test_does_not_mangle_cpp_scope(self):
+        text = "std::vector and boost::asio"
+        out, counts = self.s.scrub_text(text)
+        self.assertIn("std::vector", out)
+        self.assertIn("boost::asio", out)
+        self.assertEqual(counts["ips"], 0)
+
 
 class SuspiciousTokens(unittest.TestCase):
     def test_flags_high_entropy_leftover(self):

@@ -25,11 +25,9 @@ _SECRET_PATTERNS = [
 ]
 
 # key-like-name = value  (or  "key": "value"). Redacts the value, keeps the key.
-# Negative lookbehind prevents matching in redacted strings like [REDACTED_SECRET:...]
-# Must check for [ and for REDACTED prefix
+# Note: this pattern runs BEFORE secret-shape patterns to avoid double-redaction.
 _ASSIGNMENT = re.compile(
     r"""(?ix)
-    (?<![A-Z_\[])                       # not preceded by uppercase letter, underscore, or bracket
     (                                   # group 1: the key + separator (kept)
       ["']?[a-z0-9_\-]*
       (?:password|passwd|secret|token|api[_-]?key|access[_-]?key|
@@ -43,7 +41,13 @@ _ASSIGNMENT = re.compile(
 _HOME_PATH = re.compile(r"(?:/Users/|/home/|/root/|C:\\Users\\)[^\s\"',:;)\]}]*")
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 _IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-_IPV6 = re.compile(r"\b(?:[0-9A-Fa-f]{1,4}:){3,7}[0-9A-Fa-f]{1,4}\b")
+# IPv6: matches both full form and :: compressed forms, without mangling C++ scope resolution
+_IPV6 = re.compile(
+    r"\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\b"
+    r"|(?<![0-9A-Za-z_:.])"
+    r"(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?::(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?"
+    r"(?![0-9A-Za-z_:.])"
+)
 
 _TOKEN = re.compile(r"[A-Za-z0-9+/=_\-]{20,}")
 
@@ -104,14 +108,14 @@ class Sanitizer:
                 text = text.replace(val, "[REDACTED_SECRET:detect_secrets]")
                 counts["secrets"] += 1
 
-        # 2. known secret shapes
+        # 2. key = value assignments (runs before secret shapes to avoid double-redaction)
+        text, n = _ASSIGNMENT.subn(r"\1[REDACTED_SECRET:assignment]", text)
+        counts["secrets"] += n
+
+        # 3. known secret shapes
         for kind, pat in _SECRET_PATTERNS:
             text, n = pat.subn("[REDACTED_SECRET:%s]" % kind, text)
             counts["secrets"] += n
-
-        # 3. key = value assignments
-        text, n = _ASSIGNMENT.subn(r"\1[REDACTED_SECRET:assignment]", text)
-        counts["secrets"] += n
 
         # 4. home / user paths (whole match replaced -> username stripped)
         text, n = _HOME_PATH.subn("[PATH]", text)
