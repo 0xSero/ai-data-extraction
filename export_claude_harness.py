@@ -91,6 +91,8 @@ def collect_config(installation, sanitizer):
             if text is not None:
                 scrubbed, counts = sanitizer.scrub_text(text)
                 records.append(_record(out, scrubbed, counts))
+            else:
+                all_warnings.append("could not read %s; skipped" % p)
 
     for name, out in (("settings.json", "settings.sanitized.json"),
                       ("settings.local.json", "settings.local.sanitized.json"),
@@ -98,12 +100,13 @@ def collect_config(installation, sanitizer):
         p = installation / name
         if p.exists():
             rec = _sanitize_json_file(p, out, sanitizer)
-            if rec is not None:
-                if rec["content"] is None:
-                    # Unparseable JSON - collect warning but don't add record
-                    all_warnings.extend(rec["warnings"])
-                else:
-                    records.append(rec)
+            if rec is None:
+                all_warnings.append("could not read %s; skipped" % p)
+            elif rec["content"] is None:
+                # Unparseable JSON - collect warning but don't add record
+                all_warnings.extend(rec["warnings"])
+            else:
+                records.append(rec)
 
     # Recursive text trees
     for tree in _CONFIG_TREES:
@@ -115,6 +118,7 @@ def collect_config(installation, sanitizer):
                 continue
             text = _read_text(f)
             if text is None:
+                all_warnings.append("could not read %s; skipped" % f)
                 continue
             rel = f.relative_to(installation).as_posix()
             if f.suffix.lower() == ".json":
@@ -303,6 +307,8 @@ def build_export(installations, include, level, use_detect_secrets, now):
     file_entries = []
 
     def add_file(rel, content, redactions):
+        if rel in files:
+            raise ValueError("duplicate bundle path: %s" % rel)
         files[rel] = content
         data = content.encode("utf-8")
         file_entries.append({
@@ -312,27 +318,37 @@ def build_export(installations, include, level, use_detect_secrets, now):
             "redactions": redactions,
         })
 
+    multi = len(installations) > 1
+    used_ns = {}
     for inst in installations:
+        if multi:
+            base = inst.name or "install"
+            n = used_ns.get(base, 0)
+            used_ns[base] = n + 1
+            ns = (base if n == 0 else "%s-%d" % (base, n + 1)) + "/"
+        else:
+            ns = ""
+
         if "config" in include:
             for rec in collect_config(inst, sanitizer):
                 warnings.extend(rec["warnings"])
                 if rec["content"] is None or not rec["rel_path"]:
                     continue
-                add_file("config/" + rec["rel_path"], rec["content"], rec["redactions"])
+                add_file("config/" + ns + rec["rel_path"], rec["content"], rec["redactions"])
                 _merge_counts(redaction_counts, rec["redactions"])
 
         if "prompts" in include:
             recs, counts = collect_prompts(inst, sanitizer)
             if recs:
                 content = "\n".join(json.dumps(r, ensure_ascii=False) for r in recs)
-                add_file("prompts/prompt_patterns.jsonl", content, counts)
+                add_file("prompts/" + ns + "prompt_patterns.jsonl", content, counts)
                 _merge_counts(redaction_counts, counts)
 
         if "conversations" in include:
             convs, counts, dropped = collect_conversations(inst, sanitizer, level)
             if convs:
                 content = "\n".join(json.dumps(c, ensure_ascii=False) for c in convs)
-                add_file("conversations/conversations.sanitized.jsonl", content, counts)
+                add_file("conversations/" + ns + "conversations.sanitized.jsonl", content, counts)
                 _merge_counts(redaction_counts, counts)
                 _merge_counts(dropped_total, dropped)
 

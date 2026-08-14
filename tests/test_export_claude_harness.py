@@ -86,6 +86,23 @@ class CollectPrompts(unittest.TestCase):
             self.assertNotIn("sure", json.dumps(recs))
             self.assertEqual(counts["paths"], 1)
 
+    def test_excludes_tool_result_block_from_user_content(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = Path(d) / ".claude"
+            proj = inst / "projects" / "myproj"
+            proj.mkdir(parents=True)
+            lines = [
+                {"type": "user", "message": {"content": [
+                    {"type": "text", "text": "please look at this"},
+                    {"type": "tool_result", "content": "SECRET TOOL OUTPUT"},
+                ]}, "timestamp": "t1"},
+            ]
+            (proj / "sess1.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
+            recs, counts = ex.collect_prompts(inst, Sanitizer(use_detect_secrets=False))
+            self.assertEqual(len(recs), 1)
+            self.assertIn("please look at this", recs[0]["text"])
+            self.assertNotIn("SECRET TOOL OUTPUT", recs[0]["text"])
+
 
 class CollectConversations(unittest.TestCase):
     def _install(self, root):
@@ -236,3 +253,39 @@ class BuildAndWrite(unittest.TestCase):
 
             self.assertTrue(
                 any("settings.json" in w for w in export["manifest"]["warnings"]))
+
+    def test_multiple_installations_no_collision(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            root_a = Path(d) / "a"
+            root_b = Path(d) / "b"
+            inst_a = root_a / ".claude"
+            inst_b = root_b / ".claude"
+            proj_a = inst_a / "projects" / "p"
+            proj_b = inst_b / "projects" / "p"
+            proj_a.mkdir(parents=True)
+            proj_b.mkdir(parents=True)
+            (inst_a / "CLAUDE.md").write_text("install A notes")
+            (inst_b / "CLAUDE.md").write_text("install B notes")
+            (proj_a / "s.jsonl").write_text(json.dumps(
+                {"type": "user", "message": {"content": "prompt from A"}}))
+            (proj_b / "s.jsonl").write_text(json.dumps(
+                {"type": "user", "message": {"content": "prompt from B"}}))
+
+            export = ex.build_export(
+                [inst_a, inst_b], {"config", "prompts"}, "strict", False, "NOW")
+
+            claude_md_keys = [k for k in export["files"] if k.endswith("/CLAUDE.md")]
+            self.assertEqual(len(claude_md_keys), 2)
+            self.assertEqual(len(set(claude_md_keys)), 2)
+
+            paths = [entry["path"] for entry in export["manifest"]["files"]]
+            self.assertEqual(len(paths), len(set(paths)))
+
+            out = Path(d) / "out"
+            bundle = ex.write_bundle(export, out, dry_run=False)
+            manifest = json.loads((bundle / "MANIFEST.json").read_text())
+            for entry in manifest["files"]:
+                data = (bundle / entry["path"]).read_bytes()
+                self.assertEqual(entry["bytes"], len(data))
+                self.assertEqual(entry["sha256"], hashlib.sha256(data).hexdigest())

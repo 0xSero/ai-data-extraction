@@ -113,6 +113,12 @@ Conversations are never included unless explicitly requested. Secrets, emails,
 IPs, and user paths are redacted; in `strict` mode (default) code bodies,
 diffs, and tool results are dropped entirely.
 
+Redaction is not a guarantee against every kind of leak: credentials embedded in
+URLs (for example `postgres://user:pass@host`), very short or low-entropy
+passwords, and secrets split across multiple lines can still slip through.
+Treat the high-entropy-token warning in `MANIFEST.json` as the backstop and
+review flagged files before sharing.
+
 ## 🚀 Quick Start
 
 ### Installation
