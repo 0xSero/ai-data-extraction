@@ -208,8 +208,13 @@ class CliNameInFileName(unittest.TestCase):
             self.assertEqual(_run(home, ["--output", str(out)])[0], 0)
             bundle, _blob = _bundle_blob(out)
             manifest = json.loads((bundle / "MANIFEST.json").read_text())
+            # Match the bundle-path warning specifically. Testing for the
+            # substring "operator's name" passed even with this control
+            # deleted, because the manifest-wide sweep uses the same words.
             self.assertTrue(
-                any("operator's name" in w for w in manifest["warnings"]),
+                any("bundle path contains the operator's name" in w
+                    and "%s-notes.md" % OPERATOR in w
+                    for w in manifest["warnings"]),
                 manifest["warnings"])
 
 

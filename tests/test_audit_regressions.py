@@ -1143,5 +1143,174 @@ class X7Performance(unittest.TestCase):
         self.assertLess(time.time() - start, 3.0)
 
 
+class Y1FlagPrefixedKeys(unittest.TestCase):
+    """Round-5 Critical: a key the sanitizer recognised was unreachable."""
+
+    def test_jvm_property_and_underscore_flags(self):
+        for line, secret in (
+                ("mvn deploy -Dgpg.passphrase=JDGxk4Wm9Pq2", "JDGxk4Wm9Pq2"),
+                ("-Dspring.datasource.password=JDGxk4Wm9Pq2", "JDGxk4Wm9Pq2"),
+                ("-Djavax.net.ssl.keyStorePassword=JDGbq8Vz3H", "JDGbq8Vz3H"),
+                ("mcp-server --api_key=JDGtr5Nc0Xg9", "JDGtr5Nc0Xg9"),
+                ("keytool -list -storepass JDGbq8Vz3Hs6", "JDGbq8Vz3Hs6")):
+            self.assertNotIn(secret, s().scrub_text(line)[0], line)
+
+    def test_benign_single_dash_flags_survive(self):
+        for line in ("java -jar /opt/mcp.jar -Xmx2g",
+                     "docker run -e MODE=prod -e DEBUG=1 image",
+                     "docker run -p 8080:80 -u 1000:1000 img",
+                     "sort -u results.txt"):
+            self.assertEqual(s().scrub_text(line)[0], line, line)
+
+    def test_glued_suffix_key_names(self):
+        for name in ("bindpw", "rootpw", "storepass", "srcstorepass"):
+            self.assertTrue(is_secret_key(name), name)
+        for name in ("bypass", "compass", "surpass", "pass"):
+            self.assertFalse(is_secret_key(name), name)
+
+
+class Y2SentenceFinalAddresses(unittest.TestCase):
+    """Round-5: the trailing guard could not tell a period from a fifth octet."""
+
+    def test_address_at_the_end_of_a_sentence(self):
+        out, counts = s().scrub_text("the bastion is at 10.77.3.201.")
+        self.assertNotIn("10.77.3.201", out)
+        self.assertEqual(counts["ips"], 1)
+        self.assertIn("[IP]", s().scrub_text("addr 2001:db8::7334.")[0])
+
+    def test_five_part_version_is_still_not_an_address(self):
+        line = "version 1.2.3.4.5 here"
+        self.assertEqual(s().scrub_text(line)[0], line)
+
+
+class Y3XmlAndAnnotations(unittest.TestCase):
+    """Round-5: XML elements and Python annotated assignments."""
+
+    def test_xml_element_credentials(self):
+        out, _ = s().scrub_text("<password>CanaryXmlPw123</password>")
+        self.assertNotIn("CanaryXmlPw123", out)
+        self.assertIn("<password>", out)
+        keep = "<timeout>30</timeout>"
+        self.assertEqual(s().scrub_text(keep)[0], keep)
+
+    def test_annotation_is_not_the_value(self):
+        out, _ = s().scrub_text("token: str = get_token()")
+        self.assertIn("token: str =", out)
+
+    def test_short_numbers_keep_their_type(self):
+        for line in ("auth_timeout = 30", "password_length = 12",
+                     "retries: int = 3", "max_retries = 3"):
+            self.assertEqual(s().scrub_text(line)[0], line, line)
+
+
+class Y4PreviouslyUnguarded(unittest.TestCase):
+    """Round-5: six load-bearing guards had no regression test at all.
+
+    Each of these was verified to fail when its fix is reverted.
+    """
+
+    def test_url_single_field_userinfo(self):
+        out, _ = s().scrub_text("https://ghp_CanaryUserinfo12345678@github.com/x")
+        self.assertNotIn("CanaryUserinfo", out)
+
+    def test_url_query_credential(self):
+        out, _ = s().scrub_text("https://api.x.com/v1?access_token=CanaryQuery99&p=2")
+        self.assertNotIn("CanaryQuery99", out)
+        self.assertIn("p=2", out)
+
+    def test_injected_wrapper_after_leading_whitespace(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = _install(d)
+            _session(inst, [
+                {"type": "user", "message": {"content": "real prompt"}},
+                {"type": "user", "message": {
+                    "content": "\n\n   <system-reminder>INJECTED</system-reminder>"}},
+            ])
+            recs, _c, _dr, _w = ex.collect_prompts(inst, s())
+            self.assertEqual([r["text"] for r in recs], ["real prompt"])
+
+    def test_injected_wrapper_in_the_tail(self):
+        with tempfile.TemporaryDirectory() as d:
+            inst = _install(d)
+            _session(inst, [{"type": "user", "message": {
+                "content": ("x" * 2000) + "<system-reminder>INJECTED</system-reminder>"}}])
+            recs, _c, dropped, _w = ex.collect_prompts(inst, s())
+            self.assertEqual(recs, [])
+            self.assertEqual(dropped["injected_user_events"], 1)
+
+    def test_generalised_credential_flag_names(self):
+        for line, secret in (("cmd --auth-token AbcCanary1234", "AbcCanary1234"),
+                             ("cmd --client-secret XyzCanary9876", "XyzCanary9876")):
+            self.assertNotIn(secret, s().scrub_text(line)[0], line)
+
+    def test_project_directory_component_is_hashed(self):
+        rel = ex._rel(Path("/i/projects/-Users-carol-src-Acme"), Path("/i"))
+        self.assertNotIn("carol", rel)
+        self.assertNotIn("Acme", rel)
+
+
+class Y5ArgvGluedFlag(unittest.TestCase):
+    """Round-5: a glued flag destroyed the following argv element."""
+
+    def test_glued_flag_does_not_consume_the_next_element(self):
+        out, counts = s().scrub_json(
+            {"args": ["java", "--token=CanaryGlued77", "-jar", "/opt/mcp.jar"]})
+        blob = json.dumps(out)
+        self.assertNotIn("CanaryGlued77", blob)
+        self.assertIn("-jar", blob)
+        self.assertIn("/opt/mcp.jar", blob)
+        self.assertEqual(counts["secrets"], 1)
+
+
+class Y6SpaceSeparatedCredentials(unittest.TestCase):
+    """Round-5: LDAP bindpw/rootpw have neither [:=] nor a fixed keyword."""
+
+    def test_ldap_style_space_separator(self):
+        for line, secret in (
+                ("bindpw JDGhw1Qe8Ry4Ti0Op", "JDGhw1Qe8Ry4Ti0Op"),
+                ("slapd has `rootpw JDGsd3Fg6Hj9Kl2Zx`.", "JDGsd3Fg6Hj9Kl2Zx"),
+                ("The LDAP bind is `bindpw JDGhw1Qe8Ry4`", "JDGhw1Qe8Ry4")):
+            self.assertNotIn(secret, s().scrub_text(line)[0], line)
+
+    def test_a_non_credential_key_does_not_consume_the_real_one(self):
+        # `is \`bindpw` used to match as a candidate and advance the scan past
+        # the real key.
+        out, _ = s().scrub_text("the bind is `bindpw JDGhw1Qe8Ry4Ti0Op` ok")
+        self.assertNotIn("JDGhw1Qe8Ry4Ti0Op", out)
+        self.assertIn("the bind is", out)
+
+    def test_ordinary_prose_with_credential_nouns_survives(self):
+        for line in ("the token budget is roughly 200k for this model",
+                     "our secret sauce is caching",
+                     "the password policy requires rotation"):
+            self.assertEqual(s().scrub_text(line)[0], line, line)
+
+
+class Y7DescriptorKeysKeepValues(unittest.TestCase):
+    """Round-5: keys naming a credential were blanked as if holding one."""
+
+    def test_descriptor_keys(self):
+        for name in ("api_key_header", "cookie-jar", "auth_header",
+                     "secret_rotation_days", "cookie_max_age",
+                     "token_store_dir", "credential_location"):
+            self.assertFalse(is_secret_key(name), name)
+
+    def test_the_real_thing_still_matches(self):
+        for name in ("api_key", "auth_token", "cookie", "client_secret",
+                     "bindpw", "AccountKey"):
+            self.assertTrue(is_secret_key(name), name)
+
+    def test_a_credential_free_config_produces_no_redactions(self):
+        doc = ("[auth]\n"
+               "cookie_max_age = 86400\n"
+               "secret_rotation_days = 90\n"
+               'api_key_header = "X-Api-Key"\n'
+               "retries = 3\n"
+               "auth_timeout = 30\n")
+        out, counts = s().scrub_text(doc)
+        self.assertEqual(out, doc)
+        self.assertEqual(counts["secrets"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

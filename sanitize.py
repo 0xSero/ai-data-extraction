@@ -32,7 +32,8 @@ _SECRET_WORDS = frozenset((
 
 _SECRET_PAIRS = frozenset((
     "apikey", "accesskey", "privatekey", "secretkey", "clientsecret",
-    "authtoken", "authkey", "authheader", "bearertoken", "sessionkey",
+    # No "authheader": the value of an auth-header key is a header NAME.
+    "authtoken", "authkey", "bearertoken", "sessionkey",
     "refreshtoken", "accesstoken", "signingkey", "encryptionkey",
     "sshkey", "deploykey", "masterkey", "subscriptionkey", "apisecret",
     "apitoken", "setcookie", "hostkey", "signingsecret", "webhooksecret",
@@ -50,7 +51,15 @@ _SECRET_SUFFIXES = tuple(sorted((
     "password", "passwd", "passphrase", "secret", "token", "credential",
     "apikey", "accesskey", "privatekey", "secretkey", "clientsecret",
     "authtoken", "sshkey", "deploykey", "masterkey", "apisecret",
+    # LDAP bindpw/rootpw, Java keytool storepass/srcstorepass.
+    "pw", "pwd", "pass",
 ), key=len, reverse=True))
+
+# Ordinary words that end in one of the short suffixes above and are not keys.
+_SUFFIX_FALSE_POSITIVES = frozenset((
+    "bypass", "compass", "surpass", "encompass", "overpass", "underpass",
+    "impass", "pass", "pw", "pwd", "brasspass", "trespass",
+))
 
 # "tokens" next to any of these is a size, not a credential.
 _COUNT_QUALIFIERS = frozenset((
@@ -59,8 +68,11 @@ _COUNT_QUALIFIERS = frozenset((
     "estimated", "size", "length", "window", "usage", "spent", "prompt",
     "completion",
     # Durations: TOKEN_TTL_SECONDS is a lifetime, not a credential.
-    "ttl", "expiry", "expires", "lifetime", "duration", "seconds", "minutes",
-    "hours", "days", "ms", "interval", "age", "timeout",
+    # Singular forms: segments are singularised before this set is consulted,
+    # so plural-only entries were unreachable.
+    "ttl", "expiry", "expire", "lifetime", "duration", "second", "minute",
+    "hour", "day", "ms", "interval", "age", "timeout", "retry", "attempt",
+    "rotation", "week", "month", "year",
 ))
 
 _DOC_QUALIFIERS = frozenset((
@@ -93,6 +105,8 @@ _DESCRIPTOR_QUALIFIERS = frozenset((
     "issuer", "audience", "endpoint", "url", "uri", "domain", "backend",
     "algo", "algorithm", "hash", "samesite", "policy", "strategy", "kind",
     "format", "version", "scheme", "path", "file", "id", "rotation",
+    # `api_key_header` names a header, `--cookie-jar` names a file.
+    "header", "jar", "store", "dir", "directory", "location", "prefix",
 ))
 
 # Key names that introduce a group of settings rather than hold one credential.
@@ -132,6 +146,10 @@ def is_secret_key(name, json_key=False):
         return False
     if "token" in segs and any(s in _COUNT_QUALIFIERS for s in segs):
         return False
+    # A trailing count or duration segment means the key holds a number about a
+    # credential, not the credential: auth_timeout, password_length, secret_ttl.
+    if len(segs) > 1 and segs[-1] in _COUNT_QUALIFIERS:
+        return False
     # "authorization_code" is the OAuth grant type, not a credential.
     if "authorization" in segs and any(s in _DOC_QUALIFIERS for s in segs):
         return False
@@ -150,7 +168,8 @@ def is_secret_key(name, json_key=False):
         return True
     if any(segs[i] + segs[i + 1] in _SECRET_PAIRS for i in range(len(segs) - 1)):
         return True
-    if len(segs) == 1 and any(segs[0].endswith(suf) for suf in _SECRET_SUFFIXES):
+    if (len(segs) == 1 and segs[0] not in _SUFFIX_FALSE_POSITIVES
+            and any(segs[0].endswith(suf) for suf in _SECRET_SUFFIXES)):
         return True
     return "".join(segs) in _SECRET_PAIRS
 
@@ -225,8 +244,10 @@ _URL_QUERY_CRED = re.compile(
 # Any long flag whose name reads as a credential, rather than a fixed list of
 # six spellings, so --auth-token / --client-secret / --registry-password are
 # covered. Short flags stay an explicit list: most are ambiguous.
-_CLI_CRED = re.compile(
-    r"(?i)(?<![\w\-])(--[a-z0-9][a-z0-9\-]*|-u)([ =]+)(\S+)")
+# Flag and separator only. Matching the value here too meant a non-credential
+# flag consumed the next token, so `-list -storepass <secret>` hid the secret
+# behind `-list`.
+_CLI_FLAG = re.compile(r"(?i)(?<![\w\-])(--?[a-z0-9][a-z0-9_.\-]*)([ =]+)")
 
 # Last-resort prose rule: `password is Xk9mQ2vL`, `.netrc` style
 # `login bob password Hunter2Prod`. Guarded by _looks_like_secret_value so
@@ -262,10 +283,39 @@ _CONFIG_PREFIX = re.compile(
 
 _YAML_BLOCK = re.compile(r"\A[|>][+-]?\d*[ \t]*\Z")
 
-_VALUE_STOP = re.compile(r"\s")
+# "&" ends a query-string parameter, so the assignment pass stops there and
+# leaves the rest of the URL for the query-credential pass.
+_VALUE_STOP = re.compile(r"[\s&]")
 
+# Values that cannot be a credential and whose replacement changes the value's
+# type, so the exported TOML, JSON or Python stops parsing. Short integers are
+# included: `retries = 3` under an auth-ish key is a setting, while a number
+# long enough to be a PIN or key id is still redacted.
 _LITERAL_VALUE = re.compile(
-    r"(?i)[\"']?(?:true|false|null|none|nil|yes|no|undefined)[\"']?[ \t]*[,;)\]}]?[ \t]*(?:\n|\Z|#)")
+    r"(?i)[\"']?(?:true|false|null|none|nil|yes|no|undefined|\d{1,4}|\d+\.\d+)"
+    r"[\"']?[ \t]*[,;)\]}]?[ \t]*(?:\n|\Z|#)")
+
+# `token: str = get()` is a Python annotated assignment; the annotation is not
+# the value, and consuming it produced code that no longer parses.
+# Whitespace around "=" is required: without it a base64 value ending in "="
+# read as an annotation and the whole assignment was skipped.
+_ANNOTATION = re.compile(r"[A-Za-z_][\w\[\], .\"']*?[ \t]+=[ \t]+")
+
+# <password>secret</password>: no [:=] anywhere, so the assignment pass could
+# not see it and the prose pass needs whitespace before the value.
+_XML_CRED = re.compile(r"(?s)<([A-Za-z_][\w.\-]*)\s*>([^<\n]{1,4000})</\1>")
+
+# `bindpw <secret>` and `rootpw <secret>` in LDAP config, `password <secret>` in
+# .netrc: a credential key name with only whitespace before the value, which
+# neither the assignment pass (needs [:=]) nor the prose pass (fixed keyword
+# list) could see. Gated on is_secret_key AND on the value looking like a
+# credential, so `token budget is 200k` and `secret sauce` are untouched.
+# Key and separator only. Matching the value in the same pattern made a
+# non-credential key consume the next word, so in `is \`bindpw <secret>` the
+# candidate `is`/`\`bindpw` advanced the scan straight past the real key.
+_SPACE_KEY = re.compile(
+    r"(?<![A-Za-z0-9_.\-])([A-Za-z_][A-Za-z0-9_.\-]*)([ \t]+)")
+_SPACE_VALUE = re.compile(r"[^\s,;'\"`\n]{4,}")
 
 # A second `KEY=` on the same line starts a sibling assignment, so the first
 # value must not run through it.
@@ -283,7 +333,11 @@ _STRUCTURAL_LINE = re.compile(r"\A(?:```|~~~|#{1,6}\s|\||[)\]}]|---|\*\*\*)")
 # 32 KB single-line blob cost 7.5 s.
 _ASSIGN_HEAD = re.compile(
     r"""(?x)
-    (?<![A-Za-z0-9_.\-])
+    # "-" is deliberately NOT in this lookbehind. Excluding it kept the scan off
+    # long identifier runs but also refused to start a key after a flag prefix,
+    # so `-Dgpg.passphrase=` and `--api_key=` were unreachable even though
+    # is_secret_key answers True for both of those names.
+    (?<![A-Za-z0-9_.])
     (?P<key>["']?[A-Za-z_][A-Za-z0-9_.\-]*["']?)
     (?P<sep>[ \t]*[:=][ \t]*)
     """)
@@ -313,13 +367,18 @@ _TILDE_USER = re.compile(r"(?<![A-Za-z0-9_~])~([A-Za-z][A-Za-z0-9._\-]*)(?=[/\\]
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 # Candidates only. Validated with ipaddress so a four-part version number like
 # 1.2.3.4 is not reported as an address.
-_IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+# The trailing guard rejects a further octet but not a sentence-ending period:
+# "the bastion is at 10.77.3.201." used to ship verbatim.
+_IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w])(?!\.\d)")
 
 # IPv6 candidates are validated with the stdlib ipaddress module plus a
 # disambiguation pass, because a bare `::` is both the unspecified address and a
 # Python extended slice.
 _IPV6_CANDIDATE = re.compile(
-    r"(?<![0-9A-Za-z_.])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Za-z_.])")
+    r"(?<![0-9A-Za-z_.])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}"
+    # Same sentence-period problem as IPv4: the trailing guard must reject a
+    # further hextet without rejecting the end of a sentence.
+    r"(?![0-9A-Za-z_])(?!\.[0-9A-Fa-f])")
 
 # "=" only as trailing base64 padding. Allowing it mid-token made
 # `DATABASE_URL=postgres` and `MAX_THINKING_TOKENS=31999` read as one long
@@ -612,6 +671,14 @@ class Sanitizer:
                     pos = bend
                 continue
 
+            # `token: str = get()` - the annotation is not the value.
+            if ":" in m.group("sep"):
+                ann = _ANNOTATION.match(text, vstart, line_end)
+                if ann:
+                    vstart = ann.end()
+                    if vstart >= line_end:
+                        continue
+
             triple = text[vstart:vstart + 3]
             if triple in ('"""', "'''"):
                 # A triple-quoted value measured as the empty string between the
@@ -681,30 +748,80 @@ class Sanitizer:
         return "".join(out), len(spans)
 
     def _redact_cli_creds(self, text):
-        count = 0
+        spans = []
+        pos = 0
+        for m in _CLI_FLAG.finditer(text):
+            if m.start() < pos:
+                continue
+            flag = m.group(1)
+            vstart = m.end()
+            vmatch = re.compile(r"\S+").match(text, vstart)
+            if not vmatch:
+                continue
+            vend = vmatch.end()
+            val = vmatch.group(0)
 
-        def sub(m):
-            nonlocal count
-            flag, sep, val = m.group(1), m.group(2), m.group(3)
-            # A long flag only qualifies when its own name reads as a credential.
-            if flag.startswith("--") and flag.lower() not in ("--user",):
-                if not is_secret_key(flag.lstrip("-")):
-                    return m.group(0)
             if flag.lower() in ("-u", "--user"):
                 # Only the `user:pass` form is a credential. `sort -u file`,
                 # `docker run -u 1000` and `-u 1000:1000` must survive.
                 user, sep2, pw = val.partition(":")
                 if not sep2 or not _looks_like_secret_value(pw):
-                    return m.group(0)
-                count += 1
-                return "%s%s%s:%s" % (flag, sep, user, REDACTED % "cli_flag")
+                    continue
+                spans.append((vstart + len(user) + 1, vend,
+                              REDACTED % "cli_flag"))
+                pos = vend
+                continue
+
+            # The gate applies to EVERY flag, single or double dash. Applying it
+            # only to `--` flags let `docker run -e DEBUG=1` be redacted.
+            if not is_secret_key(flag.lstrip("-")):
+                continue
             # `docker --secret my-resource-name` names a resource, not a value.
             if not _looks_like_secret_value(val):
-                return m.group(0)
-            count += 1
-            return "%s%s%s" % (flag, sep, REDACTED % "cli_flag")
+                continue
+            spans.append((vstart, vend, REDACTED % "cli_flag"))
+            pos = vend
 
-        return _CLI_CRED.sub(sub, text), count
+        if not spans:
+            return text, 0
+        out = []
+        cursor = 0
+        for vstart, vend, repl in sorted(spans):
+            if vstart < cursor:
+                continue
+            out.append(text[cursor:vstart])
+            out.append(repl)
+            cursor = vend
+        out.append(text[cursor:])
+        return "".join(out), len(spans)
+
+    def _redact_space_assignments(self, text):
+        protected = [(m.start(), m.end()) for m in _PLACEHOLDER.finditer(text)]
+        spans = []
+        pos = 0
+        for m in _SPACE_KEY.finditer(text):
+            if m.start() < pos:
+                continue
+            if any(a <= m.start() < b for a, b in protected):
+                continue
+            if not is_secret_key(m.group(1)):
+                continue
+            vmatch = _SPACE_VALUE.match(text, m.end())
+            if not vmatch or not _looks_like_secret_value(vmatch.group(0)):
+                continue
+            spans.append((m.end(), vmatch.end(), REDACTED % "assignment"))
+            pos = vmatch.end()
+
+        if not spans:
+            return text, 0
+        out = []
+        cursor = 0
+        for vstart, vend, repl in spans:
+            out.append(text[cursor:vstart])
+            out.append(repl)
+            cursor = vend
+        out.append(text[cursor:])
+        return "".join(out), len(spans)
 
     def _redact_prose(self, text):
         count = 0
@@ -771,6 +888,18 @@ class Sanitizer:
 
         # 5. credential-bearing CLI flags
         text, n = self._redact_cli_creds(text)
+        counts["secrets"] += n
+
+        # 5a. credential key name with a whitespace separator
+        text, n = self._redact_space_assignments(text)
+        counts["secrets"] += n
+
+        # 5b. XML element-delimited credentials
+        text, n = _XML_CRED.subn(
+            lambda m: ("<%s>%s</%s>" % (m.group(1), REDACTED % "xml_element",
+                                        m.group(1))
+                       if is_secret_key(m.group(1)) else m.group(0)),
+            text)
         counts["secrets"] += n
 
         # 6. credentials in URL userinfo, before the email pass can eat them and
@@ -898,7 +1027,12 @@ class Sanitizer:
                         out.append(REDACTED % "cli_flag")
                         redact_next = False
                         continue
+                    # Only a bare flag takes the NEXT element. `--token=x`
+                    # carries its own value, and arming here destroyed the
+                    # following argument (turning `-jar /opt/x.jar` into a
+                    # marker) and double-counted the redaction.
                     redact_next = (isinstance(v, str) and v.startswith("-")
+                                   and "=" not in v
                                    and is_secret_key(v.lstrip("-")))
                     out.append(walk(v, key_name, depth + 1, safe_name))
                 return out

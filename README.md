@@ -160,8 +160,10 @@ more than it protects.
 Beyond that: anything only a human would recognise as sensitive, such as
 proprietary names or internal hostnames, and a secret written in prose with no
 nearby cue word.
-Low-entropy passwords under 20 characters that appear without a key name or a
-cue word are also missed.
+Low-entropy passwords are missed in two situations: when they appear without a
+key name or a cue word, and when they appear next to a cue word but look like an
+ordinary word rather than a credential, since the prose rule requires the value
+to contain a digit or mixed case before removing it.
 A valid dotted quad is treated as an IP address even where it is a four-part
 version string, on the grounds that a leaked address costs more than a redacted
 version number.
