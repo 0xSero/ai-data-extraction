@@ -1,3 +1,4 @@
+import json
 import unittest
 from sanitize import Sanitizer, find_suspicious_tokens
 
@@ -113,12 +114,31 @@ class ScrubJson(unittest.TestCase):
         self.assertNotIn("sk-ant-", out["args"][1])
 
     def test_redacts_nonstring_secret_values(self):
-        obj = {"password": 123456, "apiKey": None, "credential": True}
+        obj = {"password": 123456, "apiKey": "abc", "client_secret": {"v": "x"}}
         out, counts = self.s.scrub_json(obj)
         self.assertEqual(out["password"], "[REDACTED_SECRET:key:password]")
         self.assertEqual(out["apiKey"], "[REDACTED_SECRET:key:apiKey]")
-        self.assertEqual(out["credential"], "[REDACTED_SECRET:key:credential]")
+        self.assertNotIn("x", json.dumps(out["client_secret"]))
         self.assertGreaterEqual(counts["secrets"], 3)
+
+    def test_section_keys_keep_their_shape_and_lose_their_values(self):
+        # `auth` names a group of settings. Collapsing the whole container
+        # erased structure that carried no credential; every leaf still goes.
+        obj = {"auth": {"type": "oauth", "token": "s3cretValue123"}}
+        out, _counts = self.s.scrub_json(obj)
+        self.assertEqual(set(out["auth"]), {"type", "token"})
+        self.assertNotIn("s3cretValue123", json.dumps(out))
+        self.assertNotIn("oauth", json.dumps(out))
+
+    def test_null_and_bool_secret_values_keep_their_type(self):
+        # null and true cannot carry a credential. Replacing them with a string
+        # flips the JSON type, breaking the file for re-import, and tells the
+        # reader a secret was present when none was.
+        obj = {"apiKey": None, "credential": True}
+        out, counts = self.s.scrub_json(obj)
+        self.assertIsNone(out["apiKey"])
+        self.assertIs(out["credential"], True)
+        self.assertEqual(counts["secrets"], 0)
 
     def test_redacts_nested_object_under_secret_key(self):
         obj = {"password": {"value": "plain-secret-123"}}

@@ -78,7 +78,7 @@ class CollectPrompts(unittest.TestCase):
     def test_keeps_only_sanitized_user_prompts(self):
         with tempfile.TemporaryDirectory() as d:
             inst = self._install_with_session(d)
-            recs, counts = ex.collect_prompts(inst, Sanitizer(use_detect_secrets=False))
+            recs, counts, _dropped, _warns = ex.collect_prompts(inst, Sanitizer(use_detect_secrets=False))
             self.assertEqual(len(recs), 1)
             self.assertEqual(recs[0]["source_session"], "sess1")
             self.assertNotIn("fabian", recs[0]["text"])
@@ -98,7 +98,7 @@ class CollectPrompts(unittest.TestCase):
                 ]}, "timestamp": "t1"},
             ]
             (proj / "sess1.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
-            recs, counts = ex.collect_prompts(inst, Sanitizer(use_detect_secrets=False))
+            recs, counts, _dropped, _warns = ex.collect_prompts(inst, Sanitizer(use_detect_secrets=False))
             self.assertEqual(len(recs), 1)
             self.assertIn("please look at this", recs[0]["text"])
             self.assertNotIn("SECRET TOOL OUTPUT", recs[0]["text"])
@@ -124,7 +124,7 @@ class CollectConversations(unittest.TestCase):
     def test_strict_drops_tools_and_sanitizes(self):
         with tempfile.TemporaryDirectory() as d:
             inst = self._install(d)
-            convs, counts, dropped = ex.collect_conversations(
+            convs, counts, dropped, _warns = ex.collect_conversations(
                 inst, Sanitizer(use_detect_secrets=False), "strict")
             blob = json.dumps(convs)
             self.assertNotIn("ghp_", blob)          # user secret redacted
@@ -135,7 +135,7 @@ class CollectConversations(unittest.TestCase):
     def test_balanced_keeps_but_sanitizes_tools(self):
         with tempfile.TemporaryDirectory() as d:
             inst = self._install(d)
-            convs, counts, dropped = ex.collect_conversations(
+            convs, counts, dropped, _warns = ex.collect_conversations(
                 inst, Sanitizer(use_detect_secrets=False), "balanced")
             blob = json.dumps(convs)
             self.assertIn("tool_uses", blob)         # kept
@@ -153,7 +153,7 @@ class CollectConversations(unittest.TestCase):
                 ]}, "timestamp": "t1"},
             ]
             (proj / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
-            convs, counts, dropped = ex.collect_conversations(
+            convs, counts, dropped, _warns = ex.collect_conversations(
                 inst, Sanitizer(use_detect_secrets=False), "strict")
             blob = json.dumps(convs)
             self.assertNotIn("FILE BODY", blob)      # tool output dropped
@@ -173,7 +173,7 @@ class CollectConversations(unittest.TestCase):
                 ]}, "timestamp": "t1"},
             ]
             (proj / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
-            convs, counts, dropped = ex.collect_conversations(
+            convs, counts, dropped, _warns = ex.collect_conversations(
                 inst, Sanitizer(use_detect_secrets=False), "balanced")
             blob = json.dumps(convs)
             self.assertIn("FILE BODY", blob)         # tool output kept
@@ -207,7 +207,10 @@ class BuildAndWrite(unittest.TestCase):
             inst = self._full_install(d)
             export = ex.build_export(
                 [inst], {"config", "prompts", "conversations"}, "strict", False, "NOW")
+            # The manifest is part of the bundle and is the only file a dry run
+            # emits, so it has to be searched too.
             blob = "\n".join(export["files"].values())
+            blob += json.dumps(export["manifest"])
             self.assertNotIn("ghp_", blob)
             self.assertNotIn("sk-ant-", blob)
             self.assertNotIn("fabian", blob)
