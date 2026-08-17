@@ -8,7 +8,6 @@ Auto-discovers Windsurf installations on the device
 import json
 import sqlite3
 from pathlib import Path
-from datetime import datetime
 import platform
 import os
 from collections import defaultdict
@@ -321,21 +320,12 @@ def main():
     print(f"With code context: {with_code:,}")
     print()
 
-    # Save to organized JSONL
-    output_dir = Path('extracted_data')
-    output_dir.mkdir(exist_ok=True)
-
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_file = output_dir / f'windsurf_conversations_{timestamp}.jsonl'
-
-    with open(output_file, 'w') as f:
-        for conv in all_conversations:
-            f.write(json.dumps(conv, ensure_ascii=False) + '\n')
-
-    file_size = output_file.stat().st_size / 1024 / 1024
-    print(f"✅ Saved to: {output_file}")
-    print(f"   Size: {file_size:.2f} MB")
-    print(f"   Format: JSONL (one conversation per line)")
+    # Save: one HF-traces JSONL file per session (one message per line)
+    from traces_export import write_session_files
+    n_files, n_lines = write_session_files(all_conversations, 'windsurf')
+    print(f"✅ Saved {n_files} session file(s) to extracted_data/windsurf/sessions/")
+    print(f"   Total message lines: {n_lines:,}")
+    print(f"   Format: HF-traces JSONL (one message per line, one file per session)")
 
 if __name__ == '__main__':
     main()
