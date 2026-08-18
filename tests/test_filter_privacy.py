@@ -7,8 +7,8 @@ from filter_privacy import FilterStats, discover_inputs, filter_jsonl, redact_va
 
 
 def fake_redact(text):
-    return text.replace("alice@example.com", "[PRIVATE_EMAIL]").replace(
-        "sk-secret", "[SECRET]"
+    return text.replace("alice@example.com", "<PRIVATE_EMAIL>").replace(
+        "sk-secret", "<SECRET>"
     )
 
 
@@ -26,9 +26,9 @@ class RedactValueTests(unittest.TestCase):
         filtered = redact_value(value, fake_redact, stats)
 
         self.assertEqual(
-            filtered["messages"][0]["content"], "Email [PRIVATE_EMAIL]"
+            filtered["messages"][0]["content"], "Email <PRIVATE_EMAIL>"
         )
-        self.assertEqual(filtered["messages"][1]["tool"]["output"], "[SECRET]")
+        self.assertEqual(filtered["messages"][1]["tool"]["output"], "<SECRET>")
         self.assertEqual(filtered["messages"][0]["role"], "user")
         self.assertEqual(filtered["count"], 2)
         self.assertEqual(stats.strings, 4)
@@ -49,7 +49,7 @@ class FilterJsonlTests(unittest.TestCase):
             self.assertEqual(json.loads(source.read_text()), original)
             self.assertEqual(
                 json.loads(output.read_text())["messages"][0]["content"],
-                "[PRIVATE_EMAIL]",
+                "<PRIVATE_EMAIL>",
             )
             self.assertEqual(stats.records, 1)
 

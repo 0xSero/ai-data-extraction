@@ -338,7 +338,7 @@ with open('extracted_data/cursor_complete.jsonl') as f:
 The optional `filter_privacy.py` command runs the official
 [`openai/privacy-filter`](https://huggingface.co/openai/privacy-filter) model
 locally and replaces detected spans with typed placeholders such as
-`[PRIVATE_EMAIL]` and `[SECRET]`. It recursively filters every string value, so
+`<PRIVATE_EMAIL>` and `<SECRET>`. It recursively filters every string value, so
 messages, code, tool output, diffs, and path metadata are all covered while the
 JSON structure stays intact.
 
