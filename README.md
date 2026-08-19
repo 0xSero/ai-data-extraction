@@ -90,6 +90,101 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### Enterprise-Safe Harness Export (`export_claude_harness.py`)
+
+For sensitive or enterprise environments where you want to keep your **portable
+learnings** - `CLAUDE.md`, memory, skills, slash commands, settings, and your
+personal prompt patterns - without carrying out proprietary data.
+
+```bash
+# Safe defaults: config + prompt patterns only, strict redaction
+python3 export_claude_harness.py
+
+# Review what WOULD be exported without writing any content
+python3 export_claude_harness.py --dry-run
+
+# Include sanitized conversations too (opt-in, highest risk)
+python3 export_claude_harness.py --include config,prompts,conversations
+
+# Keep tool calls and results instead of dropping them (opt-in, highest risk)
+python3 export_claude_harness.py --include config,prompts,conversations \
+  --redact-level balanced
+```
+
+`config` covers `CLAUDE.md`, `CLAUDE.local.md`, `settings.json`,
+`settings.local.json`, `.mcp.json`, and the `skills/`, `commands/`, `agents/`
+and `memory/` trees.
+Within those trees only these extensions are exported: `.md`, `.txt`, `.json`,
+`.yaml`, `.yml`, `.toml`, `.sh`, `.py`.
+Anything else, including plain `LICENSE`-style files with no extension and
+helper scripts in other languages, is left out and listed in
+`MANIFEST.json` warnings, so a skill can arrive without the scripts it
+references.
+`prompts` covers your own prompt text, drawn from session transcripts.
+`conversations` covers whole transcripts and is never included unless asked for.
+
+`--redact-level` chooses what happens to tool data inside conversations.
+`strict`, the default, drops tool calls, tool results, diffs and code context
+entirely rather than scrubbing them.
+`balanced` keeps them and sanitizes them with the same key-aware sanitizer used
+for config, which means a file body or a command output that contains no
+recognised secret shape leaves the environment intact.
+Use it only when you specifically need the tool traces.
+
+Every run writes a `MANIFEST.json` listing every file with its sha256, redaction
+counts, what was dropped, and warnings, so an export can be reviewed before it
+leaves the environment.
+Conversations are never included unless explicitly requested.
+
+**What is redacted.** In file contents and in JSON key names: known secret
+shapes (AWS keys, GitHub and Anthropic/OpenAI tokens, Slack tokens, JWTs,
+private key blocks), `key = value` assignments whose key names a credential,
+`Authorization`-style headers, credentials in URL userinfo and in
+credential-bearing CLI flags, emails, IPv4 and IPv6 addresses, and home paths
+including UNC and `~user` forms.
+In `strict` mode (the default) tool calls, tool results, diffs and code context
+are dropped rather than scrubbed, and any message content whose shape is not
+positively recognised as text is dropped too.
+Prompt patterns exclude events Claude Code injects into the user turn - skill
+payloads, slash-command expansions, command output, hook output and subagent
+notifications - which are machine output rather than your own prompts.
+
+**What is not redacted.** File and directory names. A skill saved as
+`memory/jane-notes.md` keeps that name on disk and in `MANIFEST.json`, because
+scrubbing a path removes its extension and can collide two sibling files into
+one. Names are flagged in `warnings` where they can be recognised, but a name
+that is simply a person's is not recognisable, so review `files[].path`.
+Bare usernames outside a path are also kept: the home directory name is
+frequently an ordinary word, and blanking every occurrence of it would destroy
+more than it protects.
+Beyond that: anything only a human would recognise as sensitive, such as
+proprietary names or internal hostnames, and a secret written in prose with no
+nearby cue word.
+Low-entropy passwords are missed in two situations: when they appear without a
+key name or a cue word, and when they appear next to a cue word but look like an
+ordinary word rather than a credential, since the prose rule requires the value
+to contain a digit or mixed case before removing it.
+A valid dotted quad is treated as an IP address even where it is a four-part
+version string, on the grounds that a leaked address costs more than a redacted
+version number.
+Redaction is pattern-based and local; it reduces exposure, it does not certify
+an export as safe.
+
+**Reviewing an export.** `MANIFEST.json` reports high-entropy leftovers per file
+in `files[].suspicious_tokens` and names the affected files in `warnings`, along
+with any bundle path that itself looks sensitive, any asset skipped for being
+non-text, any file whose content came from a symlink outside the installation,
+and any file that could not be parsed or sanitized.
+Read the warnings before sharing a bundle.
+The high-entropy check is a leftover detector, not a safety proof: it cannot
+see a short password, so it is a complement to reading the export, not a
+substitute for it.
+
+Installing [`detect-secrets`](https://github.com/Yelp/detect-secrets) adds a
+second scanner on top of the built-in patterns. `MANIFEST.json` records whether
+it was `used`, `unavailable` or `disabled`, so a bundle always states which
+configuration produced it.
+
 ## 🚀 Quick Start
 
 ### Installation
