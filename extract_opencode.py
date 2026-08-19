@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
 Extract ALL OpenCode conversation data
-Supports: CLI (JSON files) and Desktop (Tauri .dat files)
+Supports: CLI (SQLite database) and legacy JSON storage, plus Desktop (Tauri .dat files)
 
 Storage locations:
-- CLI: ~/.local/share/opencode/storage/ (Linux/macOS)
+- CLI (new): ~/.local/share/opencode/opencode.db (SQLite)
+- CLI (legacy): ~/.local/share/opencode/storage/ (JSON files)
 - Desktop: Platform-specific Tauri app data directories
 
 Features:
-- Extracts conversations from sessions WITH and WITHOUT metadata files
-- Reconstructs session metadata (directory, title, timestamps) from message content
+- Extracts conversations from SQLite database (v1.2.0+)
+- Falls back to legacy JSON storage for older versions
 - Assembles complete messages from message metadata + parts
-- Handles sessions where session files are missing or corrupted
+- Handles all message part types (text, tool, reasoning, etc.)
 """
 
 import json
 import struct
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 import platform
@@ -127,6 +129,242 @@ def read_tauri_store(dat_file):
         print(f"Error reading Tauri store {dat_file}: {e}")
         return {}
 
+def extract_from_sqlite(db_path):
+    """
+    Extract conversations from SQLite database (OpenCode v1.2.0+)
+    """
+    conversations = []
+    
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all sessions
+        cursor.execute("""
+            SELECT s.*, p.name as project_name, p.worktree as project_worktree
+            FROM session s
+            LEFT JOIN project p ON s.project_id = p.id
+            ORDER BY s.time_created
+        """)
+        sessions = cursor.fetchall()
+        
+        print(f"  Found {len(sessions)} sessions in database")
+        
+        for session in sessions:
+            session_id = session['id']
+            
+            # Get all messages for this session
+            cursor.execute("""
+                SELECT * FROM message 
+                WHERE session_id = ? 
+                ORDER BY time_created, id
+            """, (session_id,))
+            messages_rows = cursor.fetchall()
+            
+            if not messages_rows:
+                continue
+            
+            messages = []
+            
+            for msg_row in messages_rows:
+                message_id = msg_row['id']
+                msg_data = json.loads(msg_row['data'])
+                
+                # Build message
+                message = {
+                    'role': msg_data.get('role', 'assistant'),
+                    'content': '',
+                    'timestamp': msg_row['time_created'],
+                }
+                
+                # Add metadata from message data
+                if 'modelID' in msg_data:
+                    message['model'] = msg_data['modelID']
+                if 'providerID' in msg_data:
+                    message['provider'] = msg_data['providerID']
+                if 'agent' in msg_data:
+                    message['agent'] = msg_data['agent']
+                if 'mode' in msg_data:
+                    message['mode'] = msg_data['mode']
+                if 'cost' in msg_data:
+                    message['cost'] = msg_data['cost']
+                if 'tokens' in msg_data:
+                    message['tokens'] = msg_data['tokens']
+                if 'finish' in msg_data:
+                    message['finish_reason'] = msg_data['finish']
+                if 'parentID' in msg_data:
+                    message['parent_id'] = msg_data['parentID']
+                
+                # Get all parts for this message
+                cursor.execute("""
+                    SELECT * FROM part 
+                    WHERE message_id = ? 
+                    ORDER BY time_created, id
+                """, (message_id,))
+                part_rows = cursor.fetchall()
+                
+                content_parts = []
+                tool_calls = []
+                tool_results = []
+                reasoning_parts = []
+                
+                for part_row in part_rows:
+                    part_data = json.loads(part_row['data'])
+                    part_type = part_data.get('type', '')
+                    
+                    if part_type == 'text':
+                        text = part_data.get('text', '')
+                        if text:
+                            content_parts.append(text)
+                    
+                    elif part_type == 'tool':
+                        tool_call = {
+                            'id': part_data.get('callID'),
+                            'name': part_data.get('tool'),
+                            'input': part_data.get('state', {}).get('input'),
+                        }
+                        tool_calls.append(tool_call)
+                        
+                        # If completed, also add to tool_results
+                        state = part_data.get('state', {})
+                        if state.get('status') == 'completed' and 'output' in state:
+                            tool_results.append({
+                                'tool_call_id': part_data.get('callID'),
+                                'tool': part_data.get('tool'),
+                                'output': state['output']
+                            })
+                    
+                    elif part_type == 'tool-result':
+                        tool_results.append({
+                            'tool_call_id': part_data.get('toolCallID'),
+                            'output': part_data.get('output')
+                        })
+                    
+                    elif part_type == 'reasoning':
+                        reasoning_text = part_data.get('text', '')
+                        if reasoning_text:
+                            reasoning_parts.append(reasoning_text)
+                    
+                    elif part_type == 'patch':
+                        # Code/diff patches
+                        old_str = part_data.get('oldString', '')
+                        new_str = part_data.get('newString', '')
+                        file_path = part_data.get('filePath', '')
+                        if file_path:
+                            content_parts.append(f"```diff\n# {file_path}\n-{old_str}\n+{new_str}\n```")
+                    
+                    elif part_type == 'step-finish':
+                        # Step finish metadata - can include cost info
+                        if 'cost' in part_data and part_data['cost']:
+                            if 'cost' not in message:
+                                message['cost'] = part_data['cost']
+                        if 'tokens' in part_data and part_data['tokens']:
+                            if 'tokens' not in message:
+                                message['tokens'] = part_data['tokens']
+                
+                message['content'] = '\n'.join(content_parts)
+                
+                if tool_calls:
+                    message['tool_calls'] = tool_calls
+                if tool_results:
+                    message['tool_results'] = tool_results
+                if reasoning_parts:
+                    message['reasoning'] = '\n'.join(reasoning_parts)
+                
+                messages.append(message)
+            
+            if not messages:
+                continue
+            
+            # Build conversation
+            conversation = {
+                'messages': messages,
+                'source': 'opencode-cli-sqlite',
+                'session_id': session_id,
+                'title': session['title'],
+                'directory': session['directory'],
+                'created_at': session['time_created'],
+                'updated_at': session['time_updated'],
+                'version': session['version'],
+                'slug': session['slug'],
+            }
+            
+            # Add optional fields if present
+            if session['project_id']:
+                conversation['project_id'] = session['project_id']
+                if session['project_name']:
+                    conversation['project_name'] = session['project_name']
+                if session['project_worktree']:
+                    conversation['project_worktree'] = session['project_worktree']
+            
+            if session['parent_id']:
+                conversation['parent_session_id'] = session['parent_id']
+            
+            if session['workspace_id']:
+                conversation['workspace_id'] = session['workspace_id']
+            
+            if session['share_url']:
+                conversation['share_url'] = session['share_url']
+            
+            # Add summary stats if available
+            if session['summary_additions'] is not None:
+                conversation['summary_additions'] = session['summary_additions']
+            if session['summary_deletions'] is not None:
+                conversation['summary_deletions'] = session['summary_deletions']
+            if session['summary_files'] is not None:
+                conversation['summary_files'] = session['summary_files']
+            if session['summary_diffs']:
+                try:
+                    conversation['summary_diffs'] = json.loads(session['summary_diffs'])
+                except:
+                    pass
+            
+            # Add revert info if present
+            if session['revert']:
+                try:
+                    conversation['revert'] = json.loads(session['revert'])
+                except:
+                    pass
+            
+            # Add permission rules if present
+            if session['permission']:
+                try:
+                    conversation['permission'] = json.loads(session['permission'])
+                except:
+                    pass
+            
+            # Check for todos
+            cursor.execute("""
+                SELECT * FROM todo 
+                WHERE session_id = ? 
+                ORDER BY position
+            """, (session_id,))
+            todo_rows = cursor.fetchall()
+            if todo_rows:
+                todos = []
+                for todo_row in todo_rows:
+                    todos.append({
+                        'content': todo_row['content'],
+                        'status': todo_row['status'],
+                        'priority': todo_row['priority'],
+                        'position': todo_row['position'],
+                        'created': todo_row['time_created'],
+                        'updated': todo_row['time_updated'],
+                    })
+                conversation['todos'] = todos
+            
+            conversations.append(conversation)
+        
+        conn.close()
+        
+    except Exception as e:
+        print(f"  Error reading SQLite database: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return conversations
+
 def extract_directory_from_content(text):
     """
     Try to extract a directory path from text content (e.g., tool commands).
@@ -162,7 +400,6 @@ def extract_directory_from_content(text):
     
     return None
 
-
 def extract_project_id_from_content(text):
     """
     Try to extract a project ID from text content.
@@ -181,13 +418,10 @@ def extract_project_id_from_content(text):
     
     return None
 
-
 def extract_cli_conversations(storage_dir):
     """
-    Extract conversations from CLI JSON storage.
-    
-    Handles sessions both WITH and WITHOUT session metadata files.
-    For sessions without metadata, reconstructs session info from messages/parts.
+    Extract conversations from legacy CLI JSON storage.
+    For OpenCode versions < 1.2.0
     """
     conversations = []
     
@@ -195,13 +429,13 @@ def extract_cli_conversations(storage_dir):
     part_dir = storage_dir / 'storage' / 'part'
     
     if not message_dir.exists():
-        print(f"  Message directory not found: {message_dir}")
+        print(f"  Legacy message directory not found: {message_dir}")
         return conversations
     
     # Find all session directories (each is a directory named ses_xxx)
     session_dirs = [d for d in message_dir.iterdir() if d.is_dir() and d.name.startswith('ses_')]
     
-    print(f"  Found {len(session_dirs)} session directories")
+    print(f"  Found {len(session_dirs)} legacy session directories")
     
     processed_sessions = set()
     
@@ -359,7 +593,7 @@ def extract_cli_conversations(storage_dir):
             
             conversation = {
                 'messages': messages,
-                'source': 'opencode-cli',
+                'source': 'opencode-cli-legacy',
                 'session_id': session_id,
             }
             
@@ -489,12 +723,36 @@ def main():
         print(f"Processing {install_type} installation: {install_dir}")
         
         if install_type == 'cli':
-            conversations = extract_cli_conversations(install_dir)
+            # Check for SQLite database first (new format)
+            db_path = install_dir / 'opencode.db'
+            if db_path.exists():
+                print(f"  📁 Found SQLite database: {db_path}")
+                conversations = extract_from_sqlite(db_path)
+                if conversations:
+                    print(f"  ✅ Extracted {len(conversations)} conversations from SQLite")
+                    all_conversations.extend(conversations)
+                else:
+                    print(f"  ⚠️  No conversations found in SQLite database")
+            
+            # Also check for legacy JSON storage
+            legacy_storage = install_dir / 'storage' / 'message'
+            if legacy_storage.exists():
+                print(f"  📁 Found legacy JSON storage")
+                conversations = extract_cli_conversations(install_dir)
+                if conversations:
+                    print(f"  ✅ Extracted {len(conversations)} conversations from legacy storage")
+                    all_conversations.extend(conversations)
+                else:
+                    print(f"  ⚠️  No conversations found in legacy storage")
+            
+            if not db_path.exists() and not legacy_storage.exists():
+                print(f"  ❌ No storage found (neither SQLite nor legacy JSON)")
+                
         else:  # desktop
             conversations = extract_desktop_conversations(install_dir)
+            print(f"  Extracted {len(conversations)} conversations")
+            all_conversations.extend(conversations)
         
-        print(f"  Extracted {len(conversations)} conversations")
-        all_conversations.extend(conversations)
         print()
     
     if not all_conversations:
@@ -513,16 +771,23 @@ def main():
     with_reasoning = sum(1 for c in all_conversations
                         if any('reasoning' in m for m in c['messages']))
     
-    # Count sessions with and without metadata
-    with_session_file = sum(1 for c in all_conversations if c.get('directory'))
-    without_session_file = len(all_conversations) - with_session_file
+    # Count by source
+    from_sqlite = sum(1 for c in all_conversations if c.get('source') == 'opencode-cli-sqlite')
+    from_legacy = sum(1 for c in all_conversations if c.get('source') == 'opencode-cli-legacy')
+    from_desktop = sum(1 for c in all_conversations if c.get('source') == 'opencode-desktop')
     
     print(f"Total messages: {total_messages}")
     print(f"With tool use: {with_tools}")
     print(f"With model info: {with_models}")
     print(f"With reasoning: {with_reasoning}")
-    print(f"Full metadata (has session file): {with_session_file}")
-    print(f"Reconstructed (no session file): {without_session_file}")
+    print()
+    print(f"Sources:")
+    if from_sqlite:
+        print(f"  📊 SQLite (v1.2.0+): {from_sqlite}")
+    if from_legacy:
+        print(f"  📄 Legacy JSON (<v1.2.0): {from_legacy}")
+    if from_desktop:
+        print(f"  🖥️  Desktop app: {from_desktop}")
     print()
     
     # Save
@@ -542,4 +807,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-	
