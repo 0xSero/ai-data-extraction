@@ -1,0 +1,2 @@
+# Official OpenAI runtime, pinned to a reviewed source revision.
+opf @ git+https://github.com/openai/privacy-filter.git@f7f00ca7fb869683eb732c010299d901457f19c3

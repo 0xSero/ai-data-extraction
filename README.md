@@ -361,6 +361,39 @@ with open('extracted_data/cursor_complete.jsonl') as f:
 
 ## 🛡️ Privacy & Security
 
+### Filter a corpus with OpenAI Privacy Filter
+
+The optional `filter_privacy.py` command runs the official
+[`openai/privacy-filter`](https://huggingface.co/openai/privacy-filter) model
+locally and replaces detected spans with typed placeholders such as
+`<PRIVATE_EMAIL>` and `<SECRET>`. It recursively filters every string value, so
+messages, code, tool output, diffs, and path metadata are all covered while the
+JSON structure stays intact.
+
+The privacy filter requires Python 3.10+ and downloads the model weights on its
+first run (about 2.8 GB). Install the pinned official OpenAI runtime separately:
+
+```bash
+python3 -m pip install -r requirements-privacy-filter.txt
+```
+
+Filter individual JSONL files or a whole extraction directory:
+
+```bash
+python3 filter_privacy.py extracted_data --output-dir filtered_data
+
+# Use CUDA when available
+python3 filter_privacy.py extracted_data --output-dir filtered_data --device cuda
+```
+
+Inputs are never modified. Existing outputs are refused unless `--overwrite`
+is supplied. The unfiltered text stays local: the runtime downloads the model
+from Hugging Face and performs inference on the selected CPU or CUDA device.
+
+Privacy Filter is a data-minimization aid, not an anonymization or compliance
+guarantee. Review filtered output and combine it with secret scanning and your
+organization's privacy controls before sharing or training.
+
 ### Before Using Extracted Data
 
 1. **Scan for Secrets**:
