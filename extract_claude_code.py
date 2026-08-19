@@ -8,7 +8,6 @@ Auto-discovers Claude Code installations on the device
 import json
 import sqlite3
 from pathlib import Path
-from datetime import datetime
 import hashlib
 import platform
 import os
@@ -101,7 +100,89 @@ def extract_claude_project_conversations(project_dir):
                             message = obj.get('message', {})
                             content = message.get('content', '')
 
-                            if content:
+                            if isinstance(content, list):
+                                # Claude stores tool results INSIDE user
+                                # messages as content blocks of type
+                                # 'tool_result' (there is no standalone
+                                # 'tool_result' line type in the stream).
+                                # Extract them and attach to the preceding
+                                # assistant message that issued the calls.
+                                text_parts = []
+                                tool_result_blocks = []
+                                for item in content:
+                                    if not isinstance(item, dict):
+                                        continue
+                                    if item.get('type') == 'tool_result':
+                                        tool_result_blocks.append(item)
+                                    elif item.get('type') == 'text':
+                                        text_parts.append(item.get('text', ''))
+
+                                if tool_result_blocks:
+                                    # Resolve tool names and attachment targets
+                                    # across ALL prior assistant messages (a
+                                    # result may arrive after an intervening
+                                    # assistant turn, so the last assistant is
+                                    # not necessarily the caller).
+                                    name_map = {}
+                                    by_id = {}
+                                    last_asst = None
+                                    for m in messages:
+                                        if m.get('role') == 'assistant':
+                                            last_asst = m
+                                            for tu in (m.get('tool_uses') or []):
+                                                if isinstance(tu, dict) and tu.get('id'):
+                                                    name_map[tu['id']] = tu.get('name')
+                                                    by_id.setdefault(tu['id'], m)
+
+                                    entries = []
+                                    for tr in tool_result_blocks:
+                                        entry = {
+                                            'tool_use_id': tr.get('tool_use_id'),
+                                            'name': name_map.get(tr.get('tool_use_id')),
+                                            'content': tr.get('content', ''),
+                                            'is_error': bool(tr.get('is_error')),
+                                        }
+                                        if obj.get('toolUseResult') is not None:
+                                            entry['toolUseResult'] = obj.get('toolUseResult')
+                                        entries.append(entry)
+
+                                    # Attach each result to the assistant that
+                                    # made its call (fallback: last assistant).
+                                    standalone = []
+                                    for entry in entries:
+                                        target = by_id.get(entry.get('tool_use_id'),
+                                                           last_asst)
+                                        if target is not None:
+                                            target.setdefault('tool_results', []).append(entry)
+                                        else:
+                                            standalone.append(entry)
+
+                                    # No assistant to attach to: emit the result
+                                    # as a standalone tool message so the output
+                                    # is not lost.
+                                    for entry in standalone:
+                                        tool_msg = {
+                                            'role': 'tool',
+                                            'tool_call_id': entry['tool_use_id'],
+                                            'name': entry['name'],
+                                            'content': entry['content'],
+                                            'is_error': entry['is_error'],
+                                            'timestamp': obj.get('timestamp'),
+                                        }
+                                        if 'toolUseResult' in entry:
+                                            tool_msg['toolUseResult'] = entry['toolUseResult']
+                                        messages.append(tool_msg)
+
+                                # A user message that ALSO carries real text is
+                                # kept; a tool_result-only message is dropped.
+                                if text_parts:
+                                    messages.append({
+                                        'role': 'user',
+                                        'content': '\n'.join(text_parts),
+                                        'timestamp': obj.get('timestamp'),
+                                    })
+
+                            elif content:
                                 msg = {
                                     'role': 'user',
                                     'content': content,
@@ -117,7 +198,6 @@ def extract_claude_project_conversations(project_dir):
                             # Extract working directory
                             if 'cwd' in obj:
                                 project_path = obj['cwd']
-
                         elif msg_type == 'assistant':
                             message = obj.get('message', {})
                             content = message.get('content', [])
@@ -126,6 +206,7 @@ def extract_claude_project_conversations(project_dir):
                             text_parts = []
                             code_blocks = []
                             tool_uses = []
+                            thinking_parts = []
 
                             if isinstance(content, list):
                                 for item in content:
@@ -135,17 +216,23 @@ def extract_claude_project_conversations(project_dir):
                                         elif item.get('type') == 'tool_use':
                                             # Code execution, file edits, etc.
                                             tool_uses.append(item)
+                                        elif item.get('type') == 'thinking':
+                                            thinking_parts.append(
+                                                item.get('thinking', ''))
                             elif isinstance(content, str):
                                 text_parts.append(content)
 
                             full_text = '\n'.join(text_parts)
-                            if full_text or tool_uses:
+                            if full_text or tool_uses or thinking_parts:
                                 msg = {
                                     'role': 'assistant',
                                     'content': full_text,
                                     'model': message.get('model'),
                                     'timestamp': obj.get('timestamp')
                                 }
+                                if thinking_parts:
+                                    msg['thinking'] = '\n'.join(thinking_parts)
+                                    msg['reasoning'] = msg['thinking']
 
                                 if tool_uses:
                                     msg['tool_uses'] = tool_uses
@@ -244,21 +331,12 @@ def main():
         print(f"  {Path(inst).name:20} {count:5,} conversations")
     print()
 
-    # Save to organized JSONL
-    output_dir = Path('extracted_data')
-    output_dir.mkdir(exist_ok=True)
-
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_file = output_dir / f'claude_code_conversations_{timestamp}.jsonl'
-
-    with open(output_file, 'w') as f:
-        for conv in all_conversations:
-            f.write(json.dumps(conv, ensure_ascii=False) + '\n')
-
-    file_size = output_file.stat().st_size / 1024 / 1024
-    print(f"✅ Saved to: {output_file}")
-    print(f"   Size: {file_size:.2f} MB")
-    print(f"   Format: JSONL (one conversation per line)")
+    # Save: one HF-traces JSONL file per session (one message per line)
+    from traces_export import write_session_files
+    n_files, n_lines = write_session_files(all_conversations, 'claude_code')
+    print(f"✅ Saved {n_files} session file(s) to extracted_data/claude_code/sessions/")
+    print(f"   Total message lines: {n_lines:,}")
+    print(f"   Format: HF-traces JSONL (one message per line, one file per session)")
 
 if __name__ == '__main__':
     main()

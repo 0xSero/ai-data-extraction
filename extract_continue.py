@@ -6,7 +6,6 @@ Includes: messages, tool calls, reasoning, context
 
 import json
 from pathlib import Path
-from datetime import datetime
 
 def extract_continue_sessions():
     """Extract all Continue sessions"""
@@ -120,20 +119,12 @@ def main():
     print(f"With reasoning: {with_reasoning}")
     print()
 
-    # Save
-    output_dir = Path('extracted_data')
-    output_dir.mkdir(exist_ok=True)
-
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_file = output_dir / f'continue_conversations_{timestamp}.jsonl'
-
-    with open(output_file, 'w') as f:
-        for conv in conversations:
-            f.write(json.dumps(conv, ensure_ascii=False) + '\n')
-
-    file_size = output_file.stat().st_size / 1024
-    print(f"✅ Saved to: {output_file}")
-    print(f"   Size: {file_size:.2f} KB")
+    # Save: one HF-traces JSONL file per session (one message per line)
+    from traces_export import write_session_files
+    n_files, n_lines = write_session_files(conversations, 'continue')
+    print(f"✅ Saved {n_files} session file(s) to extracted_data/continue/sessions/")
+    print(f"   Total message lines: {n_lines:,}")
+    print(f"   Format: HF-traces JSONL (one message per line, one file per session)")
 
 if __name__ == '__main__':
     main()
