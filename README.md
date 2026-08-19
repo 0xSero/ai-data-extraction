@@ -265,6 +265,34 @@ wc -l all_conversations.jsonl
 grep -o '"source":"[^"]*"' all_conversations.jsonl | sort | uniq -c
 ```
 
+### Create Agent Skills from a corpus
+
+`corpus_to_skills.py` samples extracted conversations and asks an
+OpenAI-compatible chat-completions model to synthesize reusable
+[Agent Skills](https://agentskills.io/specification). Each result is written as
+`<skill-name>/SKILL.md` with validated `name` and `description` metadata.
+
+The command is local-first: unless `OPENAI_BASE_URL` is set, it connects to
+`http://127.0.0.1:8000/v1`. Point it at a locally served model and a filtered
+corpus:
+
+```bash
+python3 corpus_to_skills.py filtered_data \
+  --model your-local-model \
+  --skills 5 \
+  --output-dir generated_skills
+```
+
+You can also set `SKILLS_MODEL` instead of passing `--model`. The script uses
+only Python's standard library, samples across the corpus with a configurable
+character budget, treats corpus content as untrusted data, validates the model's
+JSON response, and refuses to overwrite existing skills unless `--overwrite`
+is passed.
+
+Review every generated skill before installing it. Filter the extracted corpus
+first, especially before explicitly configuring a remote API endpoint; model
+output can still repeat sensitive source material despite prompt-level guards.
+
 ### Filter by Date
 
 ```python
