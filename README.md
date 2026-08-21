@@ -76,7 +76,7 @@ Extracts from Google Gemini CLI
 
 ### 8. `extract_opencode.py`
 Extracts from OpenCode (CLI + Desktop)
-- **Searches**: 
+- **Searches**:
   - CLI: `~/.local/share/opencode/storage/` (Linux), `~/Library/Application Support/opencode` (macOS)
   - Desktop: `~/.local/share/ai.opencode.app` (Linux), `~/Library/Application Support/ai.opencode.app` (macOS)
 - **Formats**: JSON files (sessions/messages/parts) and Tauri .dat files (desktop)
@@ -89,6 +89,18 @@ Extracts from OpenCode (CLI + Desktop)
   - Agent mode and session metadata
   - Project directory and version info
   - Parent/child session relationships
+
+### 9. `extract_antigravity.py`
+Extracts from Antigravity (Google's Windsurf fork) via the Cascade agent API
+- **Searches**: `~/.gemini/antigravity/` (macOS/Linux) or equivalent
+- **Requires**: Antigravity must be running (uses the local Connect-RPC HTTP API)
+- **Auto-discovers**: Language server port and CSRF token from the running process
+- **Formats**: Live HTTP API (`exa.language_server_pb.LanguageServerService`)
+- **Includes**:
+  - User messages and assistant responses (Cascade `NOTIFY_USER` steps)
+  - Reasoning traces (`thoughts`) — the model's internal planning monologue before each response
+  - Timestamps and model info per message
+  - Workspace paths and conversation metadata (summary, step count, created/modified times)
 
 ## 🚀 Quick Start
 
@@ -126,6 +138,9 @@ python3 extract_gemini.py
 # Extract from OpenCode
 python3 extract_opencode.py
 
+# Extract from Antigravity (requires Antigravity to be running)
+python3 extract_antigravity.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -143,7 +158,8 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+└── antigravity_conversations_20250116_143215.jsonl
 ```
 
 ## 📊 Output Format
