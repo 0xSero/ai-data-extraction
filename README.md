@@ -90,6 +90,18 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### 9. `extract_omp.py`
+Extracts from omp (Oh My Pi)
+- **Searches**: `$OMP_HOME`, `~/.omp/agent`, `~/.local/share/omp`, `~/.config/omp`, `~/Library/Application Support/omp` (macOS), `%APPDATA%`/`%LOCALAPPDATA%` (Windows)
+- **Formats**: JSONL session transcripts (`sessions/[slugified-cwd]/[timestamp]_[uuid].jsonl`) plus `history.db` (SQLite prompt history, opened read-only/immutable)
+- **Includes**:
+  - User/assistant/developer messages
+  - Thinking (reasoning) blocks
+  - Tool calls with arguments, and tool results attached to their assistant turn
+  - Per-turn model attribution across mid-session model switches
+  - Compaction and branch-summary boundaries
+  - Project path, session title, sidecar tool-log filenames
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -126,6 +138,9 @@ python3 extract_gemini.py
 # Extract from OpenCode
 python3 extract_opencode.py
 
+# Extract from omp (Oh My Pi)
+python3 extract_omp.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -143,7 +158,9 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+├── omp_conversations_20250116_143215.jsonl
+└── omp_prompt_history_20250116_143215.jsonl
 ```
 
 ## 📊 Output Format
@@ -229,6 +246,21 @@ Each script follows this pattern:
 - **Format**: Hybrid (JSONL + SQLite)
 - **Location**: Similar to VSCode/Cursor structure
 - **Structure**: VSCode extension data format
+
+#### omp (Oh My Pi)
+- **Format**: JSONL transcripts (one record per line) + SQLite prompt history
+- **Locations**:
+  - Transcript: `~/.omp/agent/sessions/[slugified-cwd]/[ISO8601]_[uuid].jsonl`
+  - Sidecar tool logs: `~/.omp/agent/sessions/[slugified-cwd]/[ISO8601]_[uuid]/`
+  - Prompt history: `~/.omp/agent/history.db` (`history` table, read-only/immutable)
+- **Record types** (top-level `type`):
+  - `session`, `title`, `title_change` (metadata: id, cwd, timestamp, title)
+  - `model_change`, `mode_change`, `thinking_level_change` (runtime state)
+  - `message` — `message.role` is `user` | `assistant` | `developer` | `toolResult`;
+    `message.content` is a part array of `text` | `thinking` | `toolCall`
+  - `custom_message` (extension-authored turns), `custom` (extension-private, skipped)
+  - `compaction`, `branch_summary` (context compaction boundaries)
+- **Note**: sidecar transcripts prefixed `__` (e.g. `__advisor.jsonl`) are skipped
 
 ## 🎓 Understanding the Data
 
