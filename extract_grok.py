@@ -303,13 +303,16 @@ def extract_session(session_dir, project_path, installation):
         return None
 
     title = summary.get('generated_title') or summary.get('session_summary')
+    model = summary.get('current_model_id') or next(
+        (m['model'] for m in messages if m.get('model')), None
+    )
     conversation = {
         'messages': messages,
         'source': 'grok-build',
         'session_id': info.get('id') or session_dir.name,
         'name': title,
         'project_path': info.get('cwd') or project_path,
-        'model': summary.get('current_model_id'),
+        'model': model,
         'created_at': summary.get('created_at'),
         'updated_at': summary.get('updated_at'),
         'source_file': str(chat_file),
