@@ -90,6 +90,18 @@ Extracts from OpenCode (CLI + Desktop)
   - Project directory and version info
   - Parent/child session relationships
 
+### 9. `extract_grok.py`
+Extracts from Grok Build (xAI's terminal coding agent)
+- **Searches**: `~/.grok/sessions/` (or `$GROK_HOME/sessions/`)
+- **Formats**: JSONL session directories (`chat_history.jsonl` + `updates.jsonl` + `summary.json`)
+- **Includes**:
+  - User/assistant messages with timestamps (merged from the ACP display log)
+  - Tool calls (with parsed arguments) and tool results (with failure status)
+  - Reasoning summaries
+  - Session ID, title, model, working directory, git branch
+  - Token/turn usage from `signals.json`
+  - Parent session references and subagent metadata
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -126,6 +138,9 @@ python3 extract_gemini.py
 # Extract from OpenCode
 python3 extract_opencode.py
 
+# Extract from Grok Build
+python3 extract_grok.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -143,7 +158,8 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+└── grok_conversations_20250116_143215.jsonl
 ```
 
 ## 📊 Output Format
@@ -229,6 +245,15 @@ Each script follows this pattern:
 - **Format**: Hybrid (JSONL + SQLite)
 - **Location**: Similar to VSCode/Cursor structure
 - **Structure**: VSCode extension data format
+
+#### Grok Build
+- **Format**: Plain JSON/JSONL session directories
+- **Location**: `~/.grok/sessions/<urlencoded-cwd>/<session-id>/`
+- **Structure**:
+  - `chat_history.jsonl`: raw model messages (`user`, `assistant`, `reasoning`, `tool_result`)
+  - `updates.jsonl`: ACP display log (timestamps, tool call statuses)
+  - `summary.json`: session metadata (title, model, timestamps, parent session)
+  - `signals.json`: token usage and turn counters
 
 ## 🎓 Understanding the Data
 
