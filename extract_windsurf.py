@@ -70,7 +70,7 @@ def extract_windsurf_chat(db_path, workspace_id):
 
         for key in keys_to_try:
             try:
-                cursor.execute(f"SELECT value FROM ItemTable WHERE key = ?", (key,))
+                cursor.execute("SELECT value FROM ItemTable WHERE key = ?", (key,))
                 result = cursor.fetchone()
 
                 if result:
@@ -123,12 +123,12 @@ def extract_windsurf_chat(db_path, workspace_id):
 
                     break  # Found data, no need to try other keys
 
-            except:
+            except Exception:
                 continue
 
         conn.close()
 
-    except Exception as e:
+    except Exception:
         pass
 
     return conversations
@@ -159,7 +159,7 @@ def extract_windsurf_agent(global_db_path):
                     conv = extract_agent_conversation(data, key)
                     if conv:
                         conversations.append(conv)
-                except:
+                except Exception:
                     continue
 
         # Also check ItemTable
@@ -176,12 +176,12 @@ def extract_windsurf_agent(global_db_path):
                     conv = extract_agent_conversation(data, key)
                     if conv:
                         conversations.append(conv)
-                except:
+                except Exception:
                     continue
 
         conn.close()
 
-    except Exception as e:
+    except Exception:
         pass
 
     return conversations
@@ -296,7 +296,7 @@ def main():
             print(f"   ✅ Agent/Flow: {len(convs)} conversations")
             stats['agent'] += len(convs)
         else:
-            print(f"   ⚠️  No global storage found")
+            print("   ⚠️  No global storage found")
 
     print()
     print("="*80)
@@ -335,7 +335,7 @@ def main():
     file_size = output_file.stat().st_size / 1024 / 1024
     print(f"✅ Saved to: {output_file}")
     print(f"   Size: {file_size:.2f} MB")
-    print(f"   Format: JSONL (one conversation per line)")
+    print("   Format: JSONL (one conversation per line)")
 
 if __name__ == '__main__':
     main()

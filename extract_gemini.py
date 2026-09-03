@@ -112,7 +112,7 @@ def extract_gemini_session(session_file):
 
         return conv
 
-    except (json.JSONDecodeError, KeyError, Exception) as e:
+    except (json.JSONDecodeError, KeyError, Exception):
         return None
 
 def find_all_gemini_sessions(installation):
@@ -168,7 +168,7 @@ def main():
             installation_stats[str(installation)] = len(conversations)
             print(f"   ✅ {len(conversations)} conversations")
         else:
-            print(f"   ⚠️  No conversations found")
+            print("   ⚠️  No conversations found")
 
     print()
     print("="*80)
@@ -211,7 +211,7 @@ def main():
     file_size = output_file.stat().st_size / 1024 / 1024
     print(f"✅ Saved to: {output_file}")
     print(f"   Size: {file_size:.2f} MB")
-    print(f"   Format: JSONL (one conversation per line)")
+    print("   Format: JSONL (one conversation per line)")
 
 if __name__ == '__main__':
     main()

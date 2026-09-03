@@ -21,7 +21,6 @@ from pathlib import Path
 from datetime import datetime
 import platform
 import os
-from collections import defaultdict
 
 def find_opencode_installations():
     """Find all OpenCode installation directories"""
@@ -117,7 +116,7 @@ def read_tauri_store(dat_file):
                 value_bytes = data[offset:offset+value_len]
                 value = json.loads(value_bytes.decode('utf-8'))
                 store[key] = value
-            except:
+            except Exception:
                 pass
             
             offset += value_len
@@ -646,7 +645,7 @@ def extract_desktop_conversations(desktop_dir):
                     
                     conversations.append(conversation)
                 
-                except Exception as e:
+                except Exception:
                     continue
     
     return conversations
