@@ -500,6 +500,8 @@ locations.append(Path("/custom/path/to/tool"))
 find ~ -name "*.vscdb" -o -name "*.db" 2>/dev/null
 ```
 
+Cursor database paths containing `#`, `?`, or literal percent escapes are supported; filesystem paths are URI-encoded before opening them read-only.
+
 ### Database locked errors
 
 **Problem**: SQLite database is locked
@@ -508,7 +510,7 @@ find ~ -name "*.vscdb" -o -name "*.db" 2>/dev/null
 1. Close the AI tool before running extraction
 2. Use read-only mode:
 ```python
-conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+conn = sqlite3.connect(Path(db_path).resolve().as_uri() + '?mode=ro', uri=True)
 ```
 
 ### Permission denied

@@ -63,7 +63,7 @@ def extract_aiservice_conversations(db_path, workspace_id):
     conversations = []
 
     try:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+        conn = sqlite3.connect(Path(db_path).resolve().as_uri() + '?mode=ro', uri=True)
         cursor = conn.cursor()
 
         # Get prompts
@@ -140,7 +140,7 @@ def extract_workspace_composers(db_path, workspace_id):
     conversations = []
 
     try:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+        conn = sqlite3.connect(Path(db_path).resolve().as_uri() + '?mode=ro', uri=True)
         cursor = conn.cursor()
 
         cursor.execute("SELECT value FROM ItemTable WHERE key = 'composer.composerData'")
@@ -247,7 +247,7 @@ def extract_chat_mode(db_path, workspace_id):
     conversations = []
 
     try:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+        conn = sqlite3.connect(Path(db_path).resolve().as_uri() + '?mode=ro', uri=True)
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM ItemTable WHERE key = 'workbench.panel.aichat.view.aichat.chatdata'")
         result = cursor.fetchone()
@@ -386,7 +386,7 @@ def extract_global_composers(global_db_path):
     conversations = []
 
     try:
-        conn = sqlite3.connect(f'file:{global_db_path}?mode=ro', uri=True)
+        conn = sqlite3.connect(Path(global_db_path).resolve().as_uri() + '?mode=ro', uri=True)
         cursor = conn.cursor()
 
         cursor.execute("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
