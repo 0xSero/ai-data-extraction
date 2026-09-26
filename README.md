@@ -107,6 +107,22 @@ extractor in `extract_cursor.py` does not cover)
   - System/user/assistant/tool turns with full content
   - Chat/agent ids, title, mode, created-at, code-context and diff flags
 
+### 10. `extract_pi.py`
+Extracts from the [pi](https://github.com/badlogic/pi-mono) coding agent
+- **Searches**: `~/.pi/agent/sessions/` (or `$PI_CODING_AGENT_DIR/sessions`)
+- **Formats**: JSONL session trees (`<encoded-cwd>/<timestamp>_<uuid>.jsonl`, entries linked by `id`/`parentId`)
+- **Includes**:
+  - The active branch of each session (follows `parentId` back from the last entry, so abandoned branches are skipped)
+  - User / assistant / tool messages in OpenAI shape: `reasoning` (thinking blocks), `tool_calls` (`function.name` + JSON `arguments`), `role: "tool"` results with `tool_call_id`, `name`, `is_error`
+  - Per-message `model`, `provider`, `api`, `usage`, `stop_reason`, ISO timestamps
+  - Session `system_prompt` and `tools` (when a `session_init` entry exists), `model_changes`, title, cwd, compaction summaries (flagged `compaction_summary`)
+
+### 11. `extract_omp.py`
+Extracts from omp (oh-my-pi, a pi fork); same session format, parsed by `extract_pi.py`
+- **Searches**: `~/.omp/agent/sessions/` (or `$OMP_CODING_AGENT_DIR/sessions`)
+- **Includes**: everything `extract_pi.py` does, plus advisor/subagent sessions stored in
+  `<session-dir>/<agent>.jsonl`, flagged with `subagent: true` and `agent`
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -145,6 +161,10 @@ python3 extract_opencode.py
 
 # Extract from Cursor CLI (cursor-agent)
 python3 extract_cursor_cli.py
+
+# Extract from pi / omp
+python3 extract_pi.py
+python3 extract_omp.py
 
 # Extract from ALL tools at once
 ./extract_all.sh
