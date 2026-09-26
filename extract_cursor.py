@@ -311,9 +311,12 @@ def extract_bubbles_for_composer(cursor, composer_id):
     bubbles = []
 
     try:
+        # Key-range scan uses the primary-key index; a parameterized LIKE forces a
+        # full table scan per composer, which never finishes on multi-GB databases.
+        prefix = f'bubbleId:{composer_id}:'
         cursor.execute(
-            "SELECT key, value FROM cursorDiskKV WHERE key LIKE ?",
-            (f'bubbleId:{composer_id}:%',)
+            "SELECT key, value FROM cursorDiskKV WHERE key >= ? AND key < ? ORDER BY rowid",
+            (prefix, prefix[:-1] + ';')
         )
 
         for key, value in cursor.fetchall():
