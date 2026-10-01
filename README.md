@@ -107,6 +107,27 @@ extractor in `extract_cursor.py` does not cover)
   - System/user/assistant/tool turns with full content
   - Chat/agent ids, title, mode, created-at, code-context and diff flags
 
+### 10. `extract_devin.py`
+Extracts from Devin Desktop (the successor to Windsurf — its ACP session store,
+which `extract_windsurf.py` does not cover)
+- **Searches**: `<Devin>/User/acp-messages/<uuid>.db`
+  - macOS: `~/Library/Application Support/Devin`
+  - Linux: `~/.config/Devin`
+  - Windows: `%APPDATA%/Devin`
+- **Formats**: one SQLite database per session
+  - `meta` table: `info` JSON (session config), `message_count`, `truncated`
+  - `messages` table: `position`, `kind`, `payload` JSON
+  - Session names resolved from `globalStorage/state.vscdb` keys
+    `windsurf.acp.messageStore.session.*` → `{uuid, lastUpdated}`
+- **Includes**:
+  - User messages (with `userEdits` file-change reports)
+  - Agent messages and agent reasoning (`agent_thought`, flagged `is_thought`)
+  - Tool calls with tool name, title, status, `rawInput`/`rawOutput` and locations
+  - Nested subagent threads (`child_messages`, up to 4 levels deep)
+  - Truncation flag when Devin's per-session message cap dropped older history
+- Dedupes case-variant install paths on case-insensitive filesystems and
+  opens live WAL databases read-only (temp-copy fallback when locked)
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -146,6 +167,9 @@ python3 extract_opencode.py
 # Extract from Cursor CLI (cursor-agent)
 python3 extract_cursor_cli.py
 
+# Extract from Devin Desktop
+python3 extract_devin.py
+
 # Extract from ALL tools at once
 ./extract_all.sh
 ```
@@ -163,7 +187,8 @@ extracted_data/
 ├── trae_conversations_20250116_143115.jsonl
 ├── windsurf_conversations_20250116_143130.jsonl
 ├── continue_conversations_20250116_143145.jsonl
-└── opencode_conversations_20250116_143200.jsonl
+├── opencode_conversations_20250116_143200.jsonl
+└── devin_conversations_20250116_143215.jsonl
 ```
 
 ## 📊 Output Format
