@@ -86,6 +86,17 @@ else
 fi
 echo ""
 
+# Pi and OMP share an ancestry-aware parser; Droid has its own session format.
+for tool in pi omp droid; do
+    echo "🔍 Extracting from $tool..."
+    if python3 "extract_$tool.py" 2>&1 | tee "extracted_data/${tool}_extraction.log" | grep -q "Total conversations: [1-9]"; then
+        found_tools+=("$tool")
+    else
+        not_found+=("$tool")
+    fi
+    echo ""
+done
+
 echo "================================================================================"
 echo "EXTRACTION SUMMARY"
 echo "================================================================================"

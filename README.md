@@ -12,6 +12,18 @@ Automatically discovers and extracts **complete conversation history** including
 - ✅ Tool use and execution results
 - ✅ Timestamps and metadata
 
+Pi and OMP session exports use one shared parser. The default follows the active
+branch; `python3 extract_pi.py --all-branches` and `python3 extract_omp.py --all-branches`
+export separate leaf conversations with their ancestry and branch IDs. String
+answers, custom context, reasoning, tool-call IDs, model changes, advisor/subagent
+sessions and branch summaries are preserved. OMP also supports `--prompt-history`
+for a separate read-only SQLite snapshot, including committed WAL rows.
+
+`extract_droid.py` reads Factory/Droid sessions and settings under `~/.factory/sessions`.
+The aggregate script includes all three. The parser consolidation carries the
+Pi/OMP work from PR #26, Joshua Warren's OMP coverage from #17 and Umang Bhalla's
+Droid contribution from #7, with regression fixes and attribution.
+
 ## 📦 Included Scripts
 
 ### 1. `extract_claude_code.py`

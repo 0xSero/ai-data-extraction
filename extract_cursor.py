@@ -312,8 +312,8 @@ def extract_bubbles_for_composer(cursor, composer_id):
 
     try:
         cursor.execute(
-            "SELECT key, value FROM cursorDiskKV WHERE key LIKE ?",
-            (f'bubbleId:{composer_id}:%',)
+            "SELECT key, value FROM cursorDiskKV WHERE key >= ? AND key < ? ORDER BY rowid",
+            (f'bubbleId:{composer_id}:', f'bubbleId:{composer_id};')
         )
 
         for key, value in cursor.fetchall():
