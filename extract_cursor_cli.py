@@ -88,7 +88,7 @@ def has_code(messages):
 
 def extract_store(db_path, chat_id):
     try:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+        conn = sqlite3.connect(Path(db_path).resolve().as_uri() + '?mode=ro', uri=True)
     except sqlite3.Error:
         return None
     try:
