@@ -57,6 +57,21 @@ class SharedSessionTests(unittest.TestCase):
         self.assertEqual(messages[-1]['tool_call_id'], messages[0]['tool_calls'][0]['id'])
         self.assertNotIn('tool_results', messages[1])
 
+    def test_legacy_tool_aliases_summary_text_and_malformed_parent(self):
+        rows = [message('a', None, 'assistant', [{'type': 'toolCall', 'toolCallId': 'legacy-call', 'tool': 'read', 'args': {'file': 'x'}}]),
+                {**message('r', 'a', 'toolResult', 'result'), 'toolCallId': 'legacy-call'},
+                {'type': 'branch_summary', 'id': 's', 'parentId': 'r', 'text': 'legacy branch text'},
+                message('bad-parent', [], 'assistant', 'independent answer')]
+        self.write(rows)
+        branches = extract_sessions(self.path, 'omp', all_branches=True)
+        self.assertEqual(len(branches), 2)
+        branch = next(b for b in branches if b['branch_id'] == 's')
+        call = branch['messages'][0]['tool_calls'][0]
+        self.assertEqual(call['id'], 'legacy-call')
+        self.assertEqual(call['function'], {'name': 'read', 'arguments': '{"file": "x"}'})
+        self.assertEqual(branch['messages'][1]['tool_call_id'], 'legacy-call')
+        self.assertEqual(branch['messages'][2]['content'], 'legacy branch text')
+
     def test_droid_bad_records_settings_and_string_answer_preserve_valid_turns(self):
         self.write([99, {'type': 'message', 'message': 'bad'}, {'type': 'session_start', 'id': 'droid-s'},
                     message('u', None, 'user', 'question'), message('a', 'u', 'assistant', '\x1b[31manswer\x1b[0m')])

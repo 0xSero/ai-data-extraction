@@ -105,12 +105,12 @@ def convert_message(m, entry_ts):
             elif t == 'redactedThinking':
                 thinking.append('[redacted]')
             elif t == 'toolCall':
-                args = item.get('arguments', {})
+                args = item.get('arguments', item.get('args', {}))
                 tool_calls.append({
-                    'id': item.get('id'),
+                    'id': item.get('id') or item.get('toolCallId'),
                     'type': 'function',
                     'function': {
-                        'name': item.get('name'),
+                        'name': item.get('name') or item.get('tool'),
                         'arguments': args if isinstance(args, str) else json.dumps(args, ensure_ascii=False),
                     },
                 })
@@ -174,7 +174,10 @@ def _convert_session(entries, session_file, source, leaf_id=None):
         if t == 'message' and isinstance(e.get('message'), dict):
             if e['message'].get('role') in SKIP_ROLES:
                 continue
-            msg = convert_message(e['message'], e.get('timestamp'))
+            message = e['message']
+            if message.get('role') == 'toolResult' and not message.get('toolCallId'):
+                message = {**message, 'toolCallId': e.get('toolCallId')}
+            msg = convert_message(message, e.get('timestamp'))
             if msg:
                 if msg['role'] == 'assistant':
                     msg['model'] = msg.get('model') or current_model
@@ -194,7 +197,7 @@ def _convert_session(entries, session_file, source, leaf_id=None):
                 'timestamp': e.get('timestamp'), 'custom': True, 'custom_type': e.get('customType'),
                 'display': e.get('display'), 'details': e.get('details'), 'attribution': e.get('attribution')})
         elif t in ('compaction', 'branch_summary'):
-            messages.append({'role': 'user', 'content': e.get('summary', ''), 'timestamp': e.get('timestamp'),
+            messages.append({'role': 'user', 'content': e.get('summary') or e.get('text') or '', 'timestamp': e.get('timestamp'),
                              'event': t, 'compaction_summary': t == 'compaction', 'synthetic': True})
         elif t in ('title_change', 'session_info'):
             title = e.get('title') or e.get('name') or title
@@ -242,7 +245,7 @@ def extract_sessions(session_file, source, all_branches=False):
         conv = _convert_session(entries, session_file, source)
         return [conv] if conv else []
     nodes = [e for e in entries if e.get('type') not in ('session', 'title') and isinstance(e.get('id'), str)]
-    parents = {e.get('parentId') for e in nodes}
+    parents = {e['parentId'] for e in nodes if isinstance(e.get('parentId'), str)}
     leaves = [e['id'] for e in nodes if e['id'] not in parents] or [None]
     return [c for leaf in leaves if (c := _convert_session(entries, session_file, source, leaf))]
 
